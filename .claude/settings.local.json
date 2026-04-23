@@ -12,7 +12,20 @@
       "Bash(git reset *)",
       "Bash(git commit --amend -m ' *)",
       "Bash(git restore *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(npm run *)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime status)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime log --oneline -20)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime branch -a)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime remote -v)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime log --all --oneline --graph -30)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime diff master wave3-a3-init-lead --stat)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime diff wave3-a3-init-lead wave3-b3-install-hooks --stat)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime diff wave3-a3-init-lead wave3-c3-eval-clis --stat)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime diff .claude/settings.local.json)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime diff --stat)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime add -A)",
+      "Bash(git -C c:/JSProj/claude-obsidian-runtime status --short)"
     ],
     "additionalDirectories": [
       "C:\\Users\\adkrn\\.claude\\plans"

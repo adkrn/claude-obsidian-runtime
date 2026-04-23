@@ -3,23 +3,42 @@
 /**
  * Hook installer for Obsidian-Claude runtime.
  *
- * Usage:
- *   node install-hooks.mjs --project-dir C:/JSProj/talkSim
+ * Two modes (auto-detected):
+ *   1. Template copy mode (Wave 3 B3 contract): copies templates/hooks/*.sh
+ *      verbatim into <projectDir>/.claude/hooks/, preserving project-local hooks.
+ *      Activated when --from-manifest, --preserve, --dry-run, or --force is set,
+ *      OR when no runtime-manifest.json exists in the project.
+ *   2. Manifest mode (legacy/Wave 0): generates shell wrappers from
+ *      .claude/runtime-manifest.json + patches settings.json + writes version.
+ *      Activated when runtime-manifest.json exists and none of the mode flags set.
  *
- * Reads `.claude/runtime-manifest.json` from the project,
- * generates .sh thin wrappers in `.claude/hooks/`,
- * and patches `.claude/settings.json` with core hook entries.
+ * CLI (template copy mode):
+ *   --project-dir <path>      target project directory (required)
+ *   --preserve <a,b,c>        hook file names to preserve (never overwrite)
+ *   --from-manifest           read preserveHooks from runtime-manifest.json
+ *   --force                   overwrite existing core hooks
+ *   --dry-run                 plan only, no file copy
+ *   --help                    show usage
  *
- * Idempotent: running twice produces the same result.
- * Project-specific hooks in settings.json are preserved.
+ * Template copy stdout (on success):
+ *   {"installed":["..."], "preserved":["..."], "skipped":[{"name":"...","reason":"..."}]}
+ *
+ * Exit codes:
+ *   0 normal
+ *   2 argument error
  */
 
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { parseCliArgs } from '../core/runtime-lib.mjs';
 import { ensureDir, loadJson } from '../core/utils.mjs';
 
-// ── Core hook definitions ──────────────────────────────────────────
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PACKAGE_ROOT = path.resolve(__dirname, '..');
+
+// ── Core hook definitions (manifest mode) ──────────────────────────
 
 const CORE_HOOKS = {
   SessionStart: {
@@ -69,12 +88,19 @@ const POST_TOOL_USE_CORE = {
   background: true
 };
 
-// ── Shell wrapper templates ────────────────────────────────────────
+const DEFAULT_PRESERVE_LIST = [
+  'error-detector.sh',
+  'error-agent-enforcer.sh',
+  'migration-detector.sh',
+  'agent-approval-enforcer.sh',
+  'commit-reminder.sh',
+  'architect-reminder.sh',
+  'code-simplifier-detector.sh',
+  'troubleshooting-loader.sh'
+];
 
-/**
- * Legacy shell wrapper: relative path based (project's scripts/ directory).
- * Kept for v2.x manifests where `scriptsRelativePath` is set.
- */
+// ── Shell wrapper templates (manifest mode) ────────────────────────
+
 function generateLegacyShellWrapper(scriptRelativePath, args = '', background = false) {
   const bgSuffix = background ? ' &' : '';
   const argsStr = args ? ` \\\n  ${args}` : '';
@@ -85,10 +111,6 @@ node "$SCRIPT_DIR/${scriptRelativePath}"${argsStr}${bgSuffix}
 `;
 }
 
-/**
- * v3.0.0 shell wrapper: uses $CLAUDE_RUNTIME_HOME with legacy fallback.
- * Legacy fallback active for 2 weeks post-migration, then can be removed.
- */
 function generateShellWrapper(commandName, args = '', background = false, legacyRelPath = null) {
   const bgSuffix = background ? ' &' : '';
   const argsStr = args ? ` ${args}` : '';
@@ -110,12 +132,11 @@ ${legacyFallback}
 `;
 }
 
-// ── Settings.json patcher ──────────────────────────────────────────
+// ── Settings.json patcher (manifest mode) ──────────────────────────
 
 function buildCoreSettingsHooks(manifest) {
   const hooks = {};
 
-  // Lifecycle hooks
   for (const [event, def] of Object.entries(CORE_HOOKS)) {
     if (manifest.coreHooks !== 'all' && !manifest.coreHooks?.includes?.(event)) continue;
 
@@ -128,14 +149,12 @@ function buildCoreSettingsHooks(manifest) {
     };
 
     if (!hooks[event]) hooks[event] = [];
-    // Avoid duplicate core entries
     const existing = hooks[event].find((e) =>
       e.hooks?.[0]?.command?.includes(def.shellName)
     );
     if (!existing) hooks[event].push(entry);
   }
 
-  // PostToolUse hooks
   if (manifest.coreHooks === 'all' || manifest.coreHooks?.includes?.('PostToolUse')) {
     if (!hooks.PostToolUse) hooks.PostToolUse = [];
 
@@ -173,7 +192,6 @@ function mergeHooks(existing, coreHooks) {
       const coreShellName = entry.hooks?.[0]?.command || '';
       const alreadyExists = merged[event].some((e) => {
         const cmd = e.hooks?.[0]?.command || '';
-        // Match by shell script name
         return coreShellName && cmd.includes(path.basename(coreShellName.split('/').pop()));
       });
       if (!alreadyExists) {
@@ -185,37 +203,15 @@ function mergeHooks(existing, coreHooks) {
   return merged;
 }
 
-// ── Main installer ─────────────────────────────────────────────────
+// ── Manifest-mode installer ────────────────────────────────────────
 
-/**
- * Default preserve list — project-specific hook shell names that install-hooks
- * must NEVER overwrite. Can be extended per-project via --preserve or manifest.preserveHooks.
- */
-const DEFAULT_PRESERVE_LIST = [
-  'error-detector.sh',
-  'error-agent-enforcer.sh',
-  'migration-detector.sh',
-  'agent-approval-enforcer.sh',
-  'commit-reminder.sh',
-  'architect-reminder.sh',
-  'code-simplifier-detector.sh',
-  'troubleshooting-loader.sh'
-];
-
-async function installHooks(projectDir, options = {}) {
+async function installFromManifest(projectDir, options = {}) {
   const manifestPath = path.join(projectDir, '.claude', 'runtime-manifest.json');
   const manifest = loadJson(manifestPath, null);
 
   if (!manifest) {
     console.error(`[install-hooks] runtime-manifest.json not found at ${manifestPath}`);
-    console.error('[install-hooks] Create .claude/runtime-manifest.json first. Example:');
-    console.error(JSON.stringify({
-      runtimeVersion: '3.0.0',
-      coreHooks: 'all',
-      useRuntimeHome: true,
-      legacyScriptsRelativePath: '../../scripts/runtime',
-      projectHooks: {}
-    }, null, 2));
+    console.error('[install-hooks] Create .claude/runtime-manifest.json first or pass --from-templates style flags.');
     process.exit(1);
   }
 
@@ -226,14 +222,13 @@ async function installHooks(projectDir, options = {}) {
   const legacyScriptsRelPath = manifest.legacyScriptsRelativePath || null;
   const useRuntimeHome = manifest.useRuntimeHome ?? (manifest.runtimeVersion && manifest.runtimeVersion.startsWith('3'));
 
-  // Merge preserve list: default + manifest + CLI
   const preserveList = new Set([
     ...DEFAULT_PRESERVE_LIST,
     ...(manifest.preserveHooks || []),
     ...(options.preserve || [])
   ]);
 
-  const mode = options.mode || 'merge'; // merge | overwrite
+  const mode = options.mode || 'merge';
 
   ensureDir(hooksDir);
 
@@ -244,7 +239,6 @@ async function installHooks(projectDir, options = {}) {
     versionWritten: false
   };
 
-  // 1. Generate shell wrappers for core hooks
   const shellsToGenerate = new Map();
 
   for (const def of Object.values(CORE_HOOKS)) {
@@ -258,7 +252,6 @@ async function installHooks(projectDir, options = {}) {
     });
   }
 
-  // PostToolUse shell
   if (manifest.coreHooks === 'all' || manifest.coreHooks?.includes?.('PostToolUse')) {
     shellsToGenerate.set(POST_TOOL_USE_CORE.shellName, {
       script: POST_TOOL_USE_CORE.script,
@@ -270,7 +263,6 @@ async function installHooks(projectDir, options = {}) {
   }
 
   for (const [shellName, config] of shellsToGenerate) {
-    // Preserve check: if this shell name is in preserve list AND already exists, skip
     const shellPath = path.join(hooksDir, shellName);
     if (preserveList.has(shellName) && fs.existsSync(shellPath) && mode !== 'overwrite') {
       results.preserved.push(shellName);
@@ -284,7 +276,6 @@ async function installHooks(projectDir, options = {}) {
     results.shellScripts.push(shellName);
   }
 
-  // Scan for additional preserved hooks already in hooksDir (report only)
   if (fs.existsSync(hooksDir)) {
     for (const file of fs.readdirSync(hooksDir)) {
       if (preserveList.has(file) && !results.preserved.includes(file) && !results.shellScripts.includes(file)) {
@@ -293,25 +284,18 @@ async function installHooks(projectDir, options = {}) {
     }
   }
 
-  // 2. Patch settings.json
   const existingSettings = loadJson(settingsPath, { hooks: {} });
   const coreHooks = buildCoreSettingsHooks(manifest);
   const mergedHooks = mergeHooks(existingSettings.hooks || {}, coreHooks);
-  const updatedSettings = {
-    ...existingSettings,
-    hooks: mergedHooks
-  };
+  const updatedSettings = { ...existingSettings, hooks: mergedHooks };
   fs.writeFileSync(settingsPath, JSON.stringify(updatedSettings, null, 2) + '\n');
   results.settingsPatched = true;
 
-  // 3. Write version info
-  const { fileURLToPath } = await import('url');
-  const sharedPkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const sharedPkg = loadJson(path.join(sharedPkgPath, 'package.json'), { version: 'unknown' });
+  const sharedPkg = loadJson(path.join(PACKAGE_ROOT, 'package.json'), { version: 'unknown' });
   const versionInfo = {
     installedVersion: sharedPkg.version,
     installedAt: new Date().toISOString(),
-    sharedPackagePath: sharedPkgPath,
+    sharedPackagePath: PACKAGE_ROOT,
     manifestVersion: manifest.runtimeVersion || '1.0.0'
   };
   ensureDir(path.dirname(versionPath));
@@ -321,28 +305,200 @@ async function installHooks(projectDir, options = {}) {
   return results;
 }
 
+// ── Template-copy installer (Wave 3 B3 contract) ───────────────────
+
+/**
+ * Lists core hook files under templates/hooks/ (read-only).
+ * @returns {string[]} basenames
+ */
+function listTemplateCoreHooks() {
+  const dir = path.join(PACKAGE_ROOT, 'templates', 'hooks');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.sh')).sort();
+}
+
+/**
+ * Reads manifest.preserveHooks from project runtime-manifest.json (raw fs).
+ * @param {string} projectDir
+ * @returns {string[]}
+ */
+function readManifestPreserveList(projectDir) {
+  const manifestPath = path.join(projectDir, '.claude', 'runtime-manifest.json');
+  if (!fs.existsSync(manifestPath)) return [];
+  try {
+    const data = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    return Array.isArray(data.preserveHooks) ? data.preserveHooks : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Template copy installer.
+ * @param {string} projectDir
+ * @param {object} options
+ * @param {string[]} [options.preserve]    extra preserve list (merged with manifest list if --from-manifest)
+ * @param {boolean} [options.fromManifest] merge with manifest.preserveHooks
+ * @param {boolean} [options.force]        overwrite existing core hooks
+ * @param {boolean} [options.dryRun]       plan only; no writes
+ * @returns {{installed:string[], preserved:string[], skipped:{name:string,reason:string}[]}}
+ */
+function installFromTemplates(projectDir, options = {}) {
+  const installed = [];
+  const preserved = [];
+  const skipped = [];
+
+  const coreHooks = listTemplateCoreHooks();
+  const templateDir = path.join(PACKAGE_ROOT, 'templates', 'hooks');
+
+  const preserveSet = new Set(options.preserve || []);
+  if (options.fromManifest) {
+    for (const name of readManifestPreserveList(projectDir)) preserveSet.add(name);
+  }
+
+  const hooksDir = path.join(projectDir, '.claude', 'hooks');
+  if (!options.dryRun) ensureDir(hooksDir);
+
+  for (const name of coreHooks) {
+    const dst = path.join(hooksDir, name);
+    const exists = fs.existsSync(dst);
+
+    if (exists && preserveSet.has(name)) {
+      preserved.push(name);
+      continue;
+    }
+    if (exists && !options.force) {
+      skipped.push({ name, reason: 'exists, use --force to overwrite' });
+      continue;
+    }
+
+    if (!options.dryRun) {
+      const src = path.join(templateDir, name);
+      fs.copyFileSync(src, dst);
+      try { fs.chmodSync(dst, 0o755); } catch {
+        // chmod may fail on Windows; ignore silently
+      }
+    }
+    installed.push(name);
+  }
+
+  // Also report user-extended preserveHooks that already live in hooksDir
+  if (fs.existsSync(hooksDir)) {
+    for (const f of fs.readdirSync(hooksDir)) {
+      if (preserveSet.has(f) && !preserved.includes(f) && !coreHooks.includes(f)) {
+        preserved.push(f);
+      }
+    }
+  }
+
+  return { installed, preserved, skipped };
+}
+
 // ── CLI ────────────────────────────────────────────────────────────
+
+const HELP_TEXT = `Usage: install-hooks --project-dir <path> [options]
+
+Options:
+  --project-dir <path>    Target project directory (required)
+  --preserve <a,b,c>      Comma-separated hook names to preserve (never overwrite)
+  --from-manifest         Read preserveHooks from <projectDir>/.claude/runtime-manifest.json
+  --force                 Overwrite existing core hook files
+  --dry-run               Print plan only; do not copy files
+  --help                  Show this message
+
+Modes:
+  - Template copy mode (default when any above flag is used OR no runtime-manifest.json):
+      Copies templates/hooks/*.sh into <projectDir>/.claude/hooks/.
+      Prints JSON {"installed":[...], "preserved":[...], "skipped":[...]}.
+  - Manifest mode (legacy): activated when runtime-manifest.json exists
+      and no template-copy flag is set. Writes shell wrappers +
+      patches .claude/settings.json + writes runtime-version.json.
+
+Exit codes:
+  0   success (skips are OK)
+  2   argument error
+`;
 
 function parseInstallArgs(argv) {
   const args = parseCliArgs(argv);
   args.mode = 'merge';
   args.preserve = [];
+  args.fromManifest = false;
+  args.force = false;
+  args.dryRun = false;
+  args.help = false;
+  args.explicitTemplateFlag = false;
+
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--mode' && argv[i + 1]) { args.mode = argv[i + 1]; i++; }
-    else if (argv[i] === '--preserve' && argv[i + 1]) {
+    const a = argv[i];
+    if (a === '--mode' && argv[i + 1]) { args.mode = argv[i + 1]; i++; }
+    else if (a === '--preserve' && argv[i + 1]) {
       args.preserve = argv[i + 1].split(',').map((s) => s.trim()).filter(Boolean);
+      args.explicitTemplateFlag = true;
       i++;
-    }
+    } else if (a === '--from-manifest') { args.fromManifest = true; args.explicitTemplateFlag = true; }
+    else if (a === '--force') { args.force = true; args.explicitTemplateFlag = true; }
+    else if (a === '--dry-run') { args.dryRun = true; args.explicitTemplateFlag = true; }
+    else if (a === '--help' || a === '-h') { args.help = true; }
   }
   return args;
 }
 
-const args = parseInstallArgs(process.argv.slice(2));
-const projectDir = path.resolve(args.projectDir || process.env.CLAUDE_PROJECT_DIR || process.cwd());
-const result = await installHooks(projectDir, { mode: args.mode, preserve: args.preserve });
-console.log(`[install-hooks] Installed ${result.shellScripts.length} shell scripts: ${result.shellScripts.join(', ')}`);
-if (result.preserved.length > 0) {
-  console.log(`[install-hooks] Preserved ${result.preserved.length} project-specific hooks: ${result.preserved.join(', ')}`);
+function shouldUseTemplateMode(args, projectDir) {
+  if (args.explicitTemplateFlag) return true;
+  const manifestPath = path.join(projectDir, '.claude', 'runtime-manifest.json');
+  return !fs.existsSync(manifestPath);
 }
-console.log(`[install-hooks] settings.json patched: ${result.settingsPatched}`);
-console.log(`[install-hooks] runtime-version.json written: ${result.versionWritten}`);
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const args = parseInstallArgs(argv);
+
+  if (args.help) {
+    process.stdout.write(HELP_TEXT);
+    process.exit(0);
+  }
+
+  const rawProjectDir = args.projectDir || process.env.CLAUDE_PROJECT_DIR;
+  if (!rawProjectDir) {
+    process.stderr.write('[install-hooks] --project-dir is required\n');
+    process.stderr.write(HELP_TEXT);
+    process.exit(2);
+  }
+  const projectDir = path.resolve(rawProjectDir);
+
+  if (shouldUseTemplateMode(args, projectDir)) {
+    const result = installFromTemplates(projectDir, {
+      preserve: args.preserve,
+      fromManifest: args.fromManifest,
+      force: args.force,
+      dryRun: args.dryRun
+    });
+    process.stdout.write(JSON.stringify(result) + '\n');
+    process.exit(0);
+  }
+
+  // Legacy manifest mode
+  const result = await installFromManifest(projectDir, { mode: args.mode, preserve: args.preserve });
+  console.log(`[install-hooks] Installed ${result.shellScripts.length} shell scripts: ${result.shellScripts.join(', ')}`);
+  if (result.preserved.length > 0) {
+    console.log(`[install-hooks] Preserved ${result.preserved.length} project-specific hooks: ${result.preserved.join(', ')}`);
+  }
+  console.log(`[install-hooks] settings.json patched: ${result.settingsPatched}`);
+  console.log(`[install-hooks] runtime-version.json written: ${result.versionWritten}`);
+}
+
+// Exported for tests
+export { installFromTemplates, listTemplateCoreHooks, readManifestPreserveList, DEFAULT_PRESERVE_LIST };
+
+const invokedDirectly = (() => {
+  try {
+    return import.meta.url === `file://${process.argv[1]}` || process.argv[1] === __filename;
+  } catch {
+    return true;
+  }
+})();
+
+if (invokedDirectly) {
+  await main();
+}

@@ -1,5 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -353,6 +354,51 @@ describe('C11 checkTemplateIntegrity', () => {
     writeFileSafe(path.join(templatesDir, 'sample.md'), 'TAMPERED');
     const c = checkTemplateIntegrity(baseCtx(sb));
     assert.equal(c.status, 'fail');
+    assert.match(c.message, /checksum mismatch/);
+    assert.match(c.message, /sample\.md/);
+  });
+
+  it('FAIL when a required file is missing from disk', () => {
+    const templatesDir = path.join(sb.packageRoot, 'templates');
+    // Reset sandbox state: manifest declares two files but only one exists
+    fs.rmSync(templatesDir, { recursive: true, force: true });
+    fs.mkdirSync(templatesDir, { recursive: true });
+    writeFileSafe(path.join(templatesDir, 'exists.md'), 'body');
+    const shaExists = crypto.createHash('sha256').update('body').digest('hex');
+    writeFileSafe(
+      path.join(templatesDir, '_manifest.json'),
+      JSON.stringify({
+        files: [
+          { relPath: 'exists.md', sha256: shaExists, required: true },
+          { relPath: 'deleted.md', sha256: 'deadbeef', required: true }
+        ]
+      })
+    );
+    const c = checkTemplateIntegrity(baseCtx(sb));
+    assert.equal(c.status, 'fail');
+    assert.match(c.message, /1 required file\(s\) missing/);
+    assert.match(c.message, /deleted\.md/);
+    assert.ok(Array.isArray(c.detail?.data?.missing));
+    assert.ok(c.detail.data.missing.includes('deleted.md'));
+  });
+
+  it('PASS when optional (required:false) file missing but all required present', () => {
+    const templatesDir = path.join(sb.packageRoot, 'templates');
+    fs.rmSync(templatesDir, { recursive: true, force: true });
+    fs.mkdirSync(templatesDir, { recursive: true });
+    writeFileSafe(path.join(templatesDir, 'kept.md'), 'body');
+    const sha = crypto.createHash('sha256').update('body').digest('hex');
+    writeFileSafe(
+      path.join(templatesDir, '_manifest.json'),
+      JSON.stringify({
+        files: [
+          { relPath: 'kept.md', sha256: sha, required: true },
+          { relPath: 'optional-missing.md', sha256: 'xx', required: false }
+        ]
+      })
+    );
+    const c = checkTemplateIntegrity(baseCtx(sb));
+    assert.equal(c.status, 'pass');
   });
 });
 

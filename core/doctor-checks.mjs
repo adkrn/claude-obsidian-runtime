@@ -698,13 +698,25 @@ export function checkTemplateIntegrity(ctx) {
       mismatches.push({ relPath: entry.relPath, expected: entry.sha256, actual: sha });
     }
   }
-  if (missing.length > 0 || mismatches.length > 0) {
+  if (missing.length > 0) {
     return finishFail(
       check,
       start,
-      `template integrity broken: ${missing.length} missing, ${mismatches.length} mismatched`,
+      `${missing.length} required file(s) missing: ${missing.slice(0, 5).join(',')}`,
       {
         data: { missing, mismatches: mismatches.slice(0, 5) },
+        remedy: 'Reinstall: npm install -g claude-obsidian-runtime@latest'
+      }
+    );
+  }
+  if (mismatches.length > 0) {
+    const names = mismatches.slice(0, 5).map((m) => m.relPath).join(',');
+    return finishFail(
+      check,
+      start,
+      `${mismatches.length} checksum mismatch: ${names}`,
+      {
+        data: { mismatches: mismatches.slice(0, 5) },
         remedy: 'Reinstall: npm install -g claude-obsidian-runtime@latest'
       }
     );
