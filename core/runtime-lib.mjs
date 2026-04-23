@@ -246,7 +246,8 @@ export function parseCliArgs(argv) {
     taskId: '',
     sessionId: '',
     projectDir: '',
-    limit: 6
+    limit: 6,
+    dryRun: false
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -286,6 +287,11 @@ export function parseCliArgs(argv) {
         args.limit = parsed;
       }
       index += 1;
+      continue;
+    }
+
+    if (token === '--dry-run') {
+      args.dryRun = true;
       continue;
     }
   }

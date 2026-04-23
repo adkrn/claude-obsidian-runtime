@@ -16,13 +16,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
+  captureFileRead,
   captureLearningEvent,
   inferSurfaceType,
   isCodeLikePath,
   isPublicSurfacePath,
+  isReadableDocPath,
   isVerificationCommand,
   parseCaptureArgs
 } from '../core/learning-capture.mjs';
+import { loadObsidianConfig } from '../core/obsidian-config.mjs';
 import { readStdinJson } from '../core/utils.mjs';
 
 function loadManifestConfig(projectDir) {
@@ -84,6 +87,28 @@ async function main() {
   let eventType = '';
   let eventFilePath = '';
   let success = 'true';
+
+  // Design-A §1-D: Read 분기 — vault/mirror .md 읽기 시 file_read 이벤트 캡처.
+  if (toolName === 'Read' && filePath) {
+    let vaultRoot = '';
+    try {
+      vaultRoot = loadObsidianConfig(projectDir)?.vaultRoot || '';
+    } catch {
+      vaultRoot = '';
+    }
+    if (isReadableDocPath(filePath, vaultRoot)) {
+      const readResult = captureFileRead(projectDir, {
+        filePath,
+        toolName: 'Read',
+        sessionId: args.sessionId,
+        vaultRoot
+      });
+      if (readResult.ok) {
+        process.stdout.write(`${JSON.stringify(readResult)}\n`);
+      }
+    }
+    process.exit(0);
+  }
 
   if (['Edit', 'Write'].includes(toolName) && filePath) {
     eventFilePath = filePath;

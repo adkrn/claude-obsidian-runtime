@@ -29,9 +29,11 @@ import {
 import { loadIndexedRows } from './code-index-query.mjs';
 
 const KNOWLEDGE_SPECS = [
-  { kind: 'troubleshooting', root: '06_Troubleshooting', output: 'troubleshooting.jsonl' },
-  { kind: 'decision',        root: '07_Decisions',       output: 'decisions.jsonl' },
-  { kind: 'lesson',          root: '08_Lessons',         output: 'lessons.jsonl' }
+  { kind: 'troubleshooting', root: '06_Troubleshooting',    output: 'troubleshooting.jsonl' },
+  { kind: 'decision',        root: '07_Decisions',          output: 'decisions.jsonl' },
+  { kind: 'lesson',          root: '08_Lessons',            output: 'lessons.jsonl' },
+  { kind: 'reflection',      root: '08_Reflections',        output: 'reflections.jsonl' },
+  { kind: 'procedure',       root: '09_Templates/Procedures', output: 'procedures.jsonl' }
 ];
 
 function stripFrontmatter(value) {
@@ -78,6 +80,8 @@ function isSeedableDoc(relativePath) {
   if (normalized.includes('/Drafts/')) return false;
   if (baseName === '00_index' || baseName === '_index') return false;
   if (baseName.includes('index')) return false;
+  // Skip template skeletons (e.g. _pattern.md under 09_Templates/Procedures).
+  if (baseName.startsWith('_')) return false;
   return true;
 }
 

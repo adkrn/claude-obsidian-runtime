@@ -62,15 +62,60 @@ function computePromotedPath(sourceDoc) {
   return normalizePath(sourceDoc).replace(/\/Drafts\//, '/');
 }
 
+// Auto Lesson v3 frontmatter fields (Design-A §3-A).
+// When promoting, fields already present in the draft are preserved — missing
+// v3 fields are seeded with safe defaults so the promoted note is v3-complete.
+const V3_DEFAULT_FIELDS = {
+  type: 'lesson',
+  confidence: 'low',
+  importance: 3,
+  access_count: 0,
+  trigger_keywords: '[]',
+  applicable_when: '',
+  last_accessed_at: '',
+  evolved_at: '',
+  linked_reflection: ''
+};
+
+function detectExistingKeys(fmBlockLines) {
+  const keys = new Set();
+  for (const line of fmBlockLines) {
+    const match = line.match(/^([A-Za-z0-9_]+):/);
+    if (match) keys.add(match[1]);
+  }
+  return keys;
+}
+
 function updateFrontmatter(content, promotedAt) {
   const lines = content.split(/\r?\n/);
   const out = [];
+  const fmBlockLines = [];
   let inFm = false, fmClosed = false, statusUpdated = false;
+
+  // First pass — collect frontmatter block lines to know which keys already exist.
+  {
+    let scanning = false;
+    for (const line of lines) {
+      if (line.trim() === '---') {
+        if (!scanning) { scanning = true; continue; }
+        break;
+      }
+      if (scanning) fmBlockLines.push(line);
+    }
+  }
+  const existingKeys = detectExistingKeys(fmBlockLines);
+
   for (const line of lines) {
     if (!fmClosed && line.trim() === '---') {
       if (!inFm) { inFm = true; out.push(line); continue; }
       if (!statusUpdated) out.push('status: active');
       out.push(`promoted_at: ${promotedAt}`);
+      // v3 seed fields (only if missing).
+      for (const [key, defaultValue] of Object.entries(V3_DEFAULT_FIELDS)) {
+        if (!existingKeys.has(key)) {
+          out.push(`${key}: ${defaultValue}`);
+        }
+      }
       out.push(line);
       fmClosed = true;
       continue;

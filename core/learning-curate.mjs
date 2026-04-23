@@ -592,6 +592,353 @@ export function curateTaskKnowledge(projectDir, options = {}, config = {}) {
   };
 }
 
+// ── v3 Builders (Design-A §2-D / §3-A/D/E) ────────────────────────
+//
+// 5 pure (or explicitly I/O) functions used by session-end-engine to seed
+// Layer 2/3/4 memories from a closed task. Kept out of `curateTaskKnowledge`
+// so session-end can invoke them incrementally and conditionally
+// (per manifest.memoryLayers flags).
+
+const CONFIDENCE_TO_IMPORTANCE = { high: 9, medium: 6, low: 3 };
+
+function confidenceFromVerificationCount(count) {
+  if (count >= 3) return 'high';
+  if (count >= 1) return 'medium';
+  return 'low';
+}
+
+function extractTriggerKeywords(task, events = []) {
+  const sources = [
+    task?.title || '',
+    task?.prompt || '',
+    ...(Array.isArray(task?.files) ? task.files : []).map((f) => path.basename(String(f))),
+    ...(Array.isArray(events) ? events : [])
+      .map((event) => String(event?.detail?.filePath || event?.filePath || ''))
+      .filter(Boolean)
+      .map((p) => path.basename(p))
+  ];
+  const tokens = sources.flatMap((source) => tokenizeSearchText(source));
+  const filtered = uniqueStrings(tokens).filter((t) => !DEDUP_STOP_TOKENS.has(t));
+  return filtered.slice(0, 8);
+}
+
+/**
+ * buildLessonDraft — pure. Returns Auto Lesson v3 record (Design-A §3-A).
+ * @param {object} task            active/closed task record
+ * @param {object[]} [events]      events for this task (tokens for trigger_keywords)
+ * @returns {object}               lesson draft (semantic-store.upsertLesson input)
+ */
+export function buildLessonDraft(task, events = []) {
+  const safeTask = task || {};
+  const verificationCount = Array.isArray(safeTask.verifications)
+    ? safeTask.verifications.filter((v) => v && v.success).length
+    : 0;
+  const confidence = confidenceFromVerificationCount(verificationCount);
+  const importance = CONFIDENCE_TO_IMPORTANCE[confidence];
+  const scope = Array.isArray(safeTask.matchedScopes) && safeTask.matchedScopes.length > 0
+    ? safeTask.matchedScopes[0]
+    : 'repo';
+  const triggerKeywords = extractTriggerKeywords(safeTask, events);
+  const relatedFiles = Array.isArray(safeTask.files) ? safeTask.files.filter(Boolean) : [];
+  const title = limitText(
+    safeTask.title || safeTask.prompt || safeTask.taskId || 'Auto Lesson',
+    72
+  );
+  const surfaces = Array.isArray(safeTask.detectedSurfaces)
+    ? safeTask.detectedSurfaces.map((s) => String(s.surfaceType || s.type || '')).filter(Boolean)
+    : [];
+  const applicableWhen = [scope, ...surfaces]
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(' / ');
+
+  return {
+    id: `lesson-${safeTask.taskId || 'unknown'}`,
+    type: 'lesson',
+    kind: 'lesson',
+    scope,
+    title: `Lesson - ${title}`,
+    summary: limitText(
+      `Auto-generated lesson from task ${safeTask.taskId || ''}: ${title}`,
+      180
+    ),
+    trigger_keywords: triggerKeywords,
+    applicable_when: applicableWhen,
+    confidence,
+    importance,
+    access_count: 0,
+    last_accessed_at: '',
+    evolved_at: [],
+    linked_reflection: null,
+    related_task: safeTask.taskId || '',
+    related_files: relatedFiles.slice(0, 12),
+    tokens: uniqueStrings([
+      ...tokenizeSearchText(title),
+      ...triggerKeywords
+    ]).slice(0, 32),
+    status: 'draft'
+  };
+}
+
+/**
+ * buildTroubleshootingDraft — pure.
+ * Splits content into auto-filled vs manual-fill sections (Design-A §2-D).
+ * Returns null when no failures recorded.
+ */
+export function buildTroubleshootingDraft(task, failures) {
+  const safeTask = task || {};
+  const failureList = Array.isArray(failures)
+    ? failures
+    : (Array.isArray(safeTask.failures) ? safeTask.failures : []);
+  if (failureList.length === 0) return null;
+
+  const topFailure = failureList[0] || {};
+  const files = collectImportantFiles(safeTask);
+  const scope = Array.isArray(safeTask.matchedScopes) && safeTask.matchedScopes.length > 0
+    ? safeTask.matchedScopes[0]
+    : 'repo';
+  const verifications = collectVerificationSummary(safeTask);
+
+  const symptom = normalizeFailureSummary(topFailure.summary || '');
+  const reproSteps = verifications.failed.slice(0, 3)
+    .map((v) => `- \`${v.command}\` → ${limitText(v.summary || '', 160)}`)
+    .join('\n') || '- (재현 단계 기록 없음)';
+  const impactScope = [scope, ...(files.slice(0, 3).map((f) => shortenPath(f)))].join(' / ');
+  const relatedLinks = files.slice(0, 6).map((f) => `- ${shortenPath(f)}`).join('\n') || '- (관련 파일 없음)';
+
+  const body = [
+    '## 증상 (auto)',
+    `- ${symptom || '(증상 요약 없음)'}`,
+    '',
+    '## 재현 조건 (auto)',
+    reproSteps,
+    '',
+    '## 영향 범위 (auto)',
+    `- ${impactScope}`,
+    '',
+    '## 관련 링크 (auto)',
+    relatedLinks,
+    '',
+    '## 실제 원인 (manual)',
+    '<!-- CURATOR_TODO: fill after investigation -->',
+    '',
+    '## 수정 방법 (manual)',
+    '<!-- CURATOR_TODO: fill after investigation -->',
+    '',
+    '## 재발 방지 규칙 (manual)',
+    '<!-- CURATOR_TODO: fill after investigation -->',
+    '',
+    '## 검증 (manual)',
+    '<!-- CURATOR_TODO: fill after investigation -->',
+    ''
+  ].join('\n');
+
+  return {
+    kind: 'troubleshooting',
+    id: `troubleshooting-${safeTask.taskId || 'unknown'}`,
+    scope,
+    title: `Troubleshooting - ${limitText(safeTask.title || safeTask.prompt || safeTask.taskId || '', 72)}`,
+    summary: limitText(`Failure: ${symptom}`, 180),
+    relatedFiles: files,
+    failureCount: failureList.length,
+    autoSections: ['증상', '재현 조건', '영향 범위', '관련 링크'],
+    manualSections: ['실제 원인', '수정 방법', '재발 방지 규칙', '검증'],
+    body,
+    status: 'draft'
+  };
+}
+
+/**
+ * buildReflectionDraft — pure. Returns ReflectionDraft (§3-D) or null.
+ * Trigger: at least one failure AND contains a `verification_failed`-like event.
+ */
+export function buildReflectionDraft(task) {
+  const safeTask = task || {};
+  const failures = Array.isArray(safeTask.failures) ? safeTask.failures : [];
+  if (failures.length < 1) return null;
+
+  const verifications = Array.isArray(safeTask.verifications) ? safeTask.verifications : [];
+  const hasVerificationFailure = failures.some((f) =>
+    String(f?.eventType || f?.type || '').toLowerCase().includes('verification')
+  ) || verifications.some((v) => v && v.success === false);
+  if (!hasVerificationFailure) return null;
+
+  const scope = Array.isArray(safeTask.matchedScopes) && safeTask.matchedScopes.length > 0
+    ? safeTask.matchedScopes[0]
+    : 'repo';
+  const lessonId = `lesson-${safeTask.taskId || 'unknown'}`;
+  const title = limitText(safeTask.title || safeTask.prompt || safeTask.taskId || '', 72);
+  const failureSummaries = failures.slice(0, 3).map((f) => normalizeFailureSummary(f?.summary || ''));
+  const verbalSummary = limitText(
+    `Task "${title}" failed ${failures.length} time(s). Top symptom: ${failureSummaries[0] || '(none)'}`,
+    240
+  );
+
+  return {
+    id: `reflection-${safeTask.taskId || 'unknown'}`,
+    kind: 'reflection',
+    scope,
+    title: `Reflection - ${title}`,
+    summary: verbalSummary,
+    related_task: safeTask.taskId || '',
+    related_failures: failureSummaries,
+    linked_lesson: lessonId,
+    verbal_summary: verbalSummary,
+    confidence_of_fix: verifications.some((v) => v && v.success) ? 'medium' : 'low',
+    status: 'draft'
+  };
+}
+
+/**
+ * evolveRelatedMemories — I/O. Delegates to memory-evolution.
+ * Returns { evolved: [{ lessonId, proposal }], error?: string }.
+ * The memoryEvolution + semanticStore modules are passed via `deps` so this
+ * stays test-friendly without circular imports.
+ *
+ * @param {object} newLesson            lesson draft (from buildLessonDraft)
+ * @param {object} opts
+ *   - projectDir  required (for semantic-store lookups)
+ *   - deps        { findNeighbors, applyEvolution, listLessons, upsertLesson }
+ *   - threshold?  default 0.7
+ *   - topN?       default 3
+ */
+export function evolveRelatedMemories(newLesson, opts = {}) {
+  const { projectDir, deps, threshold = 0.7, topN = 3 } = opts;
+  if (!projectDir || !deps) {
+    return { evolved: [], error: 'missing_projectDir_or_deps' };
+  }
+  const { findNeighbors, applyEvolution, listLessons, upsertLesson } = deps;
+  if (!findNeighbors || !applyEvolution || !listLessons || !upsertLesson) {
+    return { evolved: [], error: 'missing_deps' };
+  }
+
+  const all = listLessons(projectDir);
+  const neighbors = findNeighbors(newLesson, all, threshold, topN);
+  const evolved = [];
+  const nowIso = new Date().toISOString();
+  for (const { lesson: neighbor } of neighbors) {
+    const proposal = {
+      neighborId: neighbor.id,
+      evolvedAt: nowIso,
+      addContext: `Linked from ${newLesson.id}`,
+      note: ''
+    };
+    const updated = applyEvolution(neighbor, proposal);
+    upsertLesson(projectDir, updated, { evolutionEnabled: false });
+    evolved.push({ lessonId: neighbor.id, proposal });
+  }
+  return { evolved };
+}
+
+/**
+ * LCS-based similarity between two surface-pattern arrays (Design-A O-2).
+ * Returns a ratio [0..1] of longest common subsequence length over max length.
+ */
+function lcsRatio(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || b.length === 0) return 0;
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const table = Array.from({ length: rows }, () => new Array(cols).fill(0));
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      table[i][j] = a[i - 1] === b[j - 1]
+        ? table[i - 1][j - 1] + 1
+        : Math.max(table[i - 1][j], table[i][j - 1]);
+    }
+  }
+  return table[a.length][b.length] / Math.max(a.length, b.length);
+}
+
+/**
+ * distillProceduralMemory — filters task history and returns procedure drafts.
+ *
+ * Pattern detection: bucket tasks by a stable `surfacePattern` signature
+ * (default: sorted detectedSurfaces[].surfaceType). A bucket becomes a
+ * procedure draft when it contains >= repeatThreshold tasks inside the
+ * windowDays window, AND their surface sequences share LCS ratio >= 0.5.
+ *
+ * @param {object[]} taskHistory       closed task records
+ * @param {object}   [opts]
+ *   - repeatThreshold: default 3
+ *   - windowDays:      default 30
+ *   - now:             Date (test injection)
+ *   - similarityMin:   default 0.5
+ * @returns {{ candidates: object[] }}
+ */
+export function distillProceduralMemory(taskHistory, opts = {}) {
+  const {
+    repeatThreshold = 3,
+    windowDays = 30,
+    now = new Date(),
+    similarityMin = 0.5
+  } = opts;
+  const history = Array.isArray(taskHistory) ? taskHistory : [];
+  if (history.length === 0) return { candidates: [] };
+
+  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+  const cutoff = now.getTime() - windowMs;
+  const recent = history.filter((task) => {
+    const ts = new Date(task?.closedAt || task?.updatedAt || task?.createdAt || 0).getTime();
+    return Number.isFinite(ts) && ts >= cutoff;
+  });
+
+  const buckets = new Map();
+  for (const task of recent) {
+    const surfaces = Array.isArray(task.detectedSurfaces) ? task.detectedSurfaces : [];
+    const signature = uniqueStrings(surfaces.map((s) => String(s.surfaceType || s.type || '').trim()).filter(Boolean))
+      .sort()
+      .join('+');
+    if (!signature) continue;
+    const bucket = buckets.get(signature) || { signature, tasks: [], sequences: [] };
+    bucket.tasks.push(task);
+    bucket.sequences.push(
+      surfaces.map((s) => String(s.surfaceType || s.type || '').trim()).filter(Boolean)
+    );
+    buckets.set(signature, bucket);
+  }
+
+  const candidates = [];
+  for (const bucket of buckets.values()) {
+    if (bucket.tasks.length < repeatThreshold) continue;
+
+    // LCS cross-check: majority pair-wise similarity >= similarityMin.
+    let pairs = 0, similarPairs = 0;
+    for (let i = 0; i < bucket.sequences.length; i += 1) {
+      for (let j = i + 1; j < bucket.sequences.length; j += 1) {
+        pairs += 1;
+        if (lcsRatio(bucket.sequences[i], bucket.sequences[j]) >= similarityMin) {
+          similarPairs += 1;
+        }
+      }
+    }
+    if (pairs > 0 && similarPairs / pairs < 0.5) continue;
+
+    const scope = bucket.tasks.find((t) => Array.isArray(t.matchedScopes) && t.matchedScopes.length > 0)
+      ?.matchedScopes[0] || 'repo';
+    const distilledFrom = bucket.tasks.map((t) => t.taskId).filter(Boolean);
+
+    candidates.push({
+      id: `procedure-${scope}-${bucket.signature.replace(/[^a-z0-9_-]/gi, '_')}`,
+      kind: 'procedure',
+      scope,
+      title: `Procedure - ${bucket.signature} (${scope})`,
+      summary: limitText(
+        `Repeated ${bucket.tasks.length} time(s) in ${windowDays}d for ${scope} scope.`,
+        180
+      ),
+      pattern_signature: bucket.signature,
+      distilled_from_tasks: distilledFrom,
+      confidence_after_n_uses: 0,
+      access_count: 0,
+      tokens: uniqueStrings(bucket.signature.split('+')),
+      importance: 6,
+      status: 'draft'
+    });
+  }
+
+  return { candidates };
+}
+
 // ── CLI entry point ────────────────────────────────────────────────
 
 function parseCurateArgs(argv) {
