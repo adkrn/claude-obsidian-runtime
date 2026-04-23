@@ -8,5 +8,19 @@
   "surfacePatterns": [],
   "scopeFolderMap": {},
   "preserveHooks": [],
-  "sessionEndPipeline": ["all"]
+  "sessionEndPipeline": ["all"],
+  "projectKinds": [],
+  "agentFanoutCap": 2,
+  "reflection": {
+    "interval": "monthly",
+    "enabled": false
+  },
+  "forgetting": {
+    "maxIdleDays": 180,
+    "minImportance": 5
+  },
+  "promotion": {
+    "confidenceThreshold": 0.75,
+    "reuseCount": 2
+  }
 }
