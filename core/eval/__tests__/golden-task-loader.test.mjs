@@ -40,7 +40,7 @@ test('loadGoldenTasks: returns bundled template when no project copy exists', as
   try {
     const result = await loadGoldenTasks({ projectDir });
     assert.equal(result.schemaVersion, '1.0.0');
-    assert.equal(result.tasks.length, 10);
+    assert.equal(result.tasks.length, 36);
     assert.equal(result.tasks[0].id, 'GOLDEN-01');
     assert.match(result.source, /templates[\\/]eval[\\/]golden-tasks\.json$/);
   } finally {

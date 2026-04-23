@@ -55,7 +55,7 @@ test('eval-run --task GOLDEN-01 with all axes skipped → emits REPORT= line', (
   assert.equal(report.performance.skipped, true);
 });
 
-test('eval-run --all 10 tasks → goldenRuns.length === 10', () => {
+test('eval-run --all 36 tasks → goldenRuns.length === 36', () => {
   const dir = makeProject();
   const r = runCli([
     '--golden', '--all',
@@ -66,7 +66,7 @@ test('eval-run --all 10 tasks → goldenRuns.length === 10', () => {
   const lastLine = r.stdout.trim().split(/\r?\n/).pop();
   const reportPath = lastLine.replace(/^REPORT=/, '').trim();
   const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-  assert.equal(report.goldenRuns.length, 10);
+  assert.equal(report.goldenRuns.length, 36);
 });
 
 test('eval-run — unknown task id → exit 1 with stderr', () => {
