@@ -1,0 +1,313 @@
+/**
+ * runtime-manifest.json schema validator.
+ *
+ * Contract (PATCH_Phase1 §2-A SSOT, §12-6):
+ *   Required 6 axes: projectTag, defaultScope, surfacePatterns, scopeFolderMap,
+ *                    preserveHooks, sessionEndPipeline
+ *   Optional extensions: coreHooks, managedRoots, retrievalWeights, memoryLayers
+ *
+ *   - 6 axes missing/malformed  -> FAIL
+ *   - extension absent          -> PASS
+ *   - extension present + type error -> FAIL
+ *   - managedRoots = []         -> PASS (explicit empty)
+ */
+
+/**
+ * @typedef {Object} SchemaError
+ * @property {string} path
+ * @property {string} expected
+ * @property {string} actual
+ * @property {'fail'|'warn'} severity
+ */
+
+/**
+ * @typedef {Object} ValidationResult
+ * @property {boolean} valid
+ * @property {SchemaError[]} errors
+ */
+
+const REQUIRED_AXES = [
+  'projectTag',
+  'defaultScope',
+  'surfacePatterns',
+  'scopeFolderMap',
+  'preserveHooks',
+  'sessionEndPipeline'
+];
+
+const RETRIEVAL_WEIGHTS_KEYS = [
+  'alphaRecency',
+  'alphaImportance',
+  'alphaRelevance',
+  'decayRatePerDay'
+];
+
+const MEMORY_LAYERS_KEYS = {
+  reflectionsEnabled: 'boolean',
+  proceduralEnabled: 'boolean',
+  evolutionEnabled: 'boolean',
+  evolutionSimilarityThreshold: 'number',
+  proceduralRepeatThreshold: 'number',
+  proceduralWindowDays: 'number'
+};
+
+function typeName(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((v) => typeof v === 'string');
+}
+
+function isRecordOfStringArray(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  for (const key of Object.keys(value)) {
+    if (!isStringArray(value[key])) return false;
+    if (value[key].length < 1) return false;
+  }
+  return Object.keys(value).length >= 1;
+}
+
+function validateSurfacePatterns(value, errors) {
+  // Allowed: string[] or Record<scope, string[]>
+  if (Array.isArray(value)) {
+    if (!value.every((v) => typeof v === 'string')) {
+      errors.push({
+        path: 'surfacePatterns',
+        expected: 'string[] (all string)',
+        actual: `array with ${typeName(value.find((v) => typeof v !== 'string'))}`,
+        severity: 'fail'
+      });
+      return false;
+    }
+    if (value.length < 1) {
+      errors.push({
+        path: 'surfacePatterns',
+        expected: 'non-empty string[]',
+        actual: 'empty array',
+        severity: 'fail'
+      });
+      return false;
+    }
+    return true;
+  }
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value);
+    if (keys.length < 1) {
+      errors.push({
+        path: 'surfacePatterns',
+        expected: 'Record with >=1 entry',
+        actual: 'empty object',
+        severity: 'fail'
+      });
+      return false;
+    }
+    for (const key of keys) {
+      if (!isStringArray(value[key])) {
+        errors.push({
+          path: `surfacePatterns.${key}`,
+          expected: 'string[]',
+          actual: typeName(value[key]),
+          severity: 'fail'
+        });
+        return false;
+      }
+    }
+    return true;
+  }
+  errors.push({
+    path: 'surfacePatterns',
+    expected: 'string[] | Record<string, string[]>',
+    actual: typeName(value),
+    severity: 'fail'
+  });
+  return false;
+}
+
+function validateScopeFolderMap(value, errors) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    errors.push({
+      path: 'scopeFolderMap',
+      expected: 'Record<string, string[]>',
+      actual: typeName(value),
+      severity: 'fail'
+    });
+    return false;
+  }
+  if (!isRecordOfStringArray(value)) {
+    errors.push({
+      path: 'scopeFolderMap',
+      expected: 'Record<string, string[]> with >=1 entry and non-empty arrays',
+      actual: 'malformed',
+      severity: 'fail'
+    });
+    return false;
+  }
+  return true;
+}
+
+function validateDefaultScopeConsistency(data, errors) {
+  if (!data.scopeFolderMap || typeof data.scopeFolderMap !== 'object') {
+    return; // upstream error already recorded
+  }
+  if (typeof data.defaultScope !== 'string' || data.defaultScope.length === 0) {
+    return; // upstream error already recorded
+  }
+  const keys = Object.keys(data.scopeFolderMap);
+  if (keys.length === 0) return; // upstream error
+  if (!keys.includes(data.defaultScope)) {
+    errors.push({
+      path: 'defaultScope',
+      expected: `one of scopeFolderMap keys: [${keys.join(', ')}]`,
+      actual: data.defaultScope,
+      severity: 'fail'
+    });
+  }
+}
+
+function validateRequiredAxes(data, errors) {
+  // projectTag
+  if (typeof data.projectTag !== 'string' || data.projectTag.length === 0) {
+    errors.push({
+      path: 'projectTag',
+      expected: 'non-empty string',
+      actual: typeName(data.projectTag),
+      severity: 'fail'
+    });
+  }
+  // defaultScope
+  if (typeof data.defaultScope !== 'string' || data.defaultScope.length === 0) {
+    errors.push({
+      path: 'defaultScope',
+      expected: 'non-empty string',
+      actual: typeName(data.defaultScope),
+      severity: 'fail'
+    });
+  }
+  // surfacePatterns
+  validateSurfacePatterns(data.surfacePatterns, errors);
+  // scopeFolderMap
+  validateScopeFolderMap(data.scopeFolderMap, errors);
+  // preserveHooks — empty array allowed
+  if (!isStringArray(data.preserveHooks)) {
+    errors.push({
+      path: 'preserveHooks',
+      expected: 'string[]',
+      actual: typeName(data.preserveHooks),
+      severity: 'fail'
+    });
+  }
+  // sessionEndPipeline — empty array allowed
+  if (!isStringArray(data.sessionEndPipeline)) {
+    errors.push({
+      path: 'sessionEndPipeline',
+      expected: 'string[]',
+      actual: typeName(data.sessionEndPipeline),
+      severity: 'fail'
+    });
+  }
+  // defaultScope must be a key of scopeFolderMap (cross-axis)
+  validateDefaultScopeConsistency(data, errors);
+}
+
+function validateOptionalExtensions(data, errors) {
+  // coreHooks
+  if (data.coreHooks !== undefined) {
+    if (!isStringArray(data.coreHooks)) {
+      errors.push({
+        path: 'coreHooks',
+        expected: 'string[]',
+        actual: typeName(data.coreHooks),
+        severity: 'fail'
+      });
+    }
+  }
+  // managedRoots — empty array allowed
+  if (data.managedRoots !== undefined) {
+    if (!isStringArray(data.managedRoots)) {
+      errors.push({
+        path: 'managedRoots',
+        expected: 'string[]',
+        actual: typeName(data.managedRoots),
+        severity: 'fail'
+      });
+    }
+  }
+  // retrievalWeights
+  if (data.retrievalWeights !== undefined) {
+    const rw = data.retrievalWeights;
+    if (!rw || typeof rw !== 'object' || Array.isArray(rw)) {
+      errors.push({
+        path: 'retrievalWeights',
+        expected: 'object',
+        actual: typeName(rw),
+        severity: 'fail'
+      });
+    } else {
+      for (const key of RETRIEVAL_WEIGHTS_KEYS) {
+        if (typeof rw[key] !== 'number' || Number.isNaN(rw[key])) {
+          errors.push({
+            path: `retrievalWeights.${key}`,
+            expected: 'number',
+            actual: typeName(rw[key]),
+            severity: 'fail'
+          });
+        }
+      }
+    }
+  }
+  // memoryLayers
+  if (data.memoryLayers !== undefined) {
+    const ml = data.memoryLayers;
+    if (!ml || typeof ml !== 'object' || Array.isArray(ml)) {
+      errors.push({
+        path: 'memoryLayers',
+        expected: 'object',
+        actual: typeName(ml),
+        severity: 'fail'
+      });
+    } else {
+      for (const [key, expectedType] of Object.entries(MEMORY_LAYERS_KEYS)) {
+        if (typeof ml[key] !== expectedType) {
+          errors.push({
+            path: `memoryLayers.${key}`,
+            expected: expectedType,
+            actual: typeName(ml[key]),
+            severity: 'fail'
+          });
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Validate runtime-manifest.json data against the 6-axis + extension contract.
+ *
+ * @param {unknown} data parsed JSON payload
+ * @returns {ValidationResult}
+ */
+export function validateManifest(data) {
+  /** @type {SchemaError[]} */
+  const errors = [];
+
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    errors.push({
+      path: '$root',
+      expected: 'object',
+      actual: typeName(data),
+      severity: 'fail'
+    });
+    return { valid: false, errors };
+  }
+
+  validateRequiredAxes(data, errors);
+  validateOptionalExtensions(data, errors);
+
+  const valid = errors.every((e) => e.severity !== 'fail');
+  return { valid, errors };
+}
+
+export const REQUIRED_MANIFEST_AXES = REQUIRED_AXES;

@@ -1,0 +1,19 @@
+{
+  "always": [
+    {
+      "path": "00_Home/Current_Focus.md",
+      "why": "current priorities and active constraints"
+    },
+    {
+      "path": "00_Home/{{PROJECT_ID}}_Index.md",
+      "why": "vault map and source-of-truth routing"
+    }
+  ],
+  "groups": [],
+  "writeBack": [
+    { "target": "07_Decisions", "when": "durable decision or policy changed" },
+    { "target": "08_Lessons", "when": "reusable lesson or guardrail discovered" },
+    { "target": "06_Troubleshooting", "when": "repeatable failure pattern discovered" },
+    { "target": "10_Worklogs", "when": "session summary or handoff needed" }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "name": "claude-obsidian-runtime",
+  "version": "3.0.0",
+  "type": "module",
+  "description": "Shared Obsidian-Claude runtime for multi-project management. Algorithms are shared; knowledge/data is project-local.",
+  "bin": {
+    "claude-obsidian-runtime": "./bin/cli.mjs",
+    "claude-runtime": "./bin/cli.mjs"
+  },
+  "exports": {
+    "./core/runtime-lib": "./core/runtime-lib.mjs",
+    "./core/utils": "./core/utils.mjs",
+    "./core/obsidian-config": "./core/obsidian-config.mjs",
+    "./core/obsidian-sync": "./core/obsidian-sync.mjs",
+    "./core/context-resolver": "./core/context-resolver.mjs",
+    "./core/architecture-utils": "./core/architecture-utils.mjs",
+    "./core/learning-capture": "./core/learning-capture.mjs",
+    "./core/learning-curate": "./core/learning-curate.mjs",
+    "./core/code-index-build": "./core/code-index-build.mjs",
+    "./core/task-start-engine": "./core/task-start-engine.mjs",
+    "./core/session-end-engine": "./core/session-end-engine.mjs",
+    "./commands/*": "./commands/*.mjs",
+    "./templates/*": "./templates/*",
+
+    "./config": "./obsidian-config.mjs",
+    "./sync": "./obsidian-sync.mjs",
+    "./utils": "./utils.mjs",
+    "./code-index": "./code-index-build.mjs",
+    "./context-resolver": "./context-resolver.mjs",
+    "./task-start": "./task-start.mjs",
+    "./session-end": "./session-end.mjs",
+    "./learning-capture": "./learning-capture.mjs",
+    "./learning-curate": "./learning-curate.mjs",
+    "./install-hooks": "./install-hooks.mjs",
+    "./architecture-utils": "./architecture-utils.mjs",
+    "./runtime-lib.mjs": "./runtime-lib.mjs"
+  },
+  "files": [
+    "bin",
+    "core",
+    "commands",
+    "templates",
+    "README.md",
+    "MIGRATION_MATRIX.md",
+    "PLAN_v2.md"
+  ]
+}

@@ -1,0 +1,185 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Claude-Obsidian Runtime 4축 평가용 Golden Task Set (기획서 §5-②-E)",
+  "tasks": [
+    {
+      "id": "GOLDEN-01",
+      "category": "hook_addition",
+      "prompt": "새 hook 추가하고 싶어",
+      "expectedScope": "workflow",
+      "expectedReadFirstPaths": [
+        "04_Architecture/Claude_Runtime_Learning_Workflow.md",
+        "09_Templates"
+      ],
+      "expectedCodeHitsKeywords": ["hook", "post-edit", "prompt-context"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "04_Architecture/Claude_Runtime_Learning_Workflow.md": 1,
+        "09_Templates/Auto_Lesson_Template.md": 1,
+        "09_Templates/Hook_Template.md": 1,
+        "06_Troubleshooting/Backend/_index.md": 0
+      }
+    },
+    {
+      "id": "GOLDEN-02",
+      "category": "bug_fix",
+      "prompt": "기존 기능에 버그가 있어 고쳐줘",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "06_Troubleshooting/_index.md",
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["bug", "fix", "error", "debug"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "06_Troubleshooting/_index.md": 1,
+        "00_Home/Current_Focus.md": 1,
+        "08_Lessons/Drafts/_index.md": 1,
+        "09_Templates/Hook_Template.md": 0
+      }
+    },
+    {
+      "id": "GOLDEN-03",
+      "category": "api_endpoint_addition",
+      "prompt": "새 API 엔드포인트 추가",
+      "expectedScope": "backend",
+      "expectedReadFirstPaths": [
+        "04_Architecture/Backend_Overview.md",
+        "09_Templates/Feature_Spec.md"
+      ],
+      "expectedCodeHitsKeywords": ["api", "endpoint", "route", "controller"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "04_Architecture/Backend_Overview.md": 1,
+        "09_Templates/Feature_Spec.md": 1,
+        "06_Troubleshooting/Backend/_index.md": 1,
+        "00_Home/Current_Focus.md": 0
+      }
+    },
+    {
+      "id": "GOLDEN-04",
+      "category": "refactoring",
+      "prompt": "코드 리팩토링 시작",
+      "expectedScope": "<matched>",
+      "expectedReadFirstPaths": [
+        "08_Lessons/Drafts/_index.md",
+        "07_Decisions/Drafts/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["refactor", "rename", "extract", "split"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "08_Lessons/Drafts/_index.md": 1,
+        "07_Decisions/Drafts/_index.md": 1,
+        "04_Architecture/_index.md": 1,
+        "09_Templates/Hook_Template.md": 0
+      }
+    },
+    {
+      "id": "GOLDEN-05",
+      "category": "test_authoring",
+      "prompt": "테스트 작성",
+      "expectedScope": "<matched>",
+      "expectedReadFirstPaths": [
+        "06_Troubleshooting/_index.md",
+        "09_Templates/Test_Template.md"
+      ],
+      "expectedCodeHitsKeywords": ["test", "spec", "vitest", "jest", "pytest"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "06_Troubleshooting/_index.md": 1,
+        "09_Templates/Test_Template.md": 1,
+        "09_Templates/Feature_Spec.md": 0,
+        "00_Home/Current_Focus.md": 0
+      }
+    },
+    {
+      "id": "GOLDEN-06",
+      "category": "documentation_update",
+      "prompt": "문서 업데이트",
+      "expectedScope": "workflow",
+      "expectedReadFirstPaths": [
+        "00_Home/Talkup_Index.md",
+        "10_Worklogs/Auto/_latest.md"
+      ],
+      "expectedCodeHitsKeywords": ["docs", "readme", "documentation"],
+      "reusability": "low",
+      "manualRelevanceScores": {
+        "00_Home/Talkup_Index.md": 1,
+        "10_Worklogs/Auto/_latest.md": 1,
+        "04_Architecture/Claude_Runtime_Learning_Workflow.md": 1,
+        "06_Troubleshooting/Backend/_index.md": 0
+      }
+    },
+    {
+      "id": "GOLDEN-07",
+      "category": "dependency_security",
+      "prompt": "의존성 보안 점검",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "06_Troubleshooting/Dependencies/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["dependency", "audit", "vulnerability", "package"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "06_Troubleshooting/Dependencies/_index.md": 1,
+        "04_Architecture/_index.md": 1,
+        "08_Lessons/Drafts/_index.md": 0,
+        "09_Templates/Hook_Template.md": 0
+      }
+    },
+    {
+      "id": "GOLDEN-08",
+      "category": "performance_optimization",
+      "prompt": "성능 최적화",
+      "expectedScope": "<matched>",
+      "expectedReadFirstPaths": [
+        "04_Architecture/_index.md",
+        "08_Lessons/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["performance", "optimize", "benchmark", "profile"],
+      "reusability": "low",
+      "manualRelevanceScores": {
+        "04_Architecture/_index.md": 1,
+        "08_Lessons/_index.md": 1,
+        "06_Troubleshooting/_index.md": 1,
+        "09_Templates/Hook_Template.md": 0
+      }
+    },
+    {
+      "id": "GOLDEN-09",
+      "category": "config_modification",
+      "prompt": "설정 파일 수정",
+      "expectedScope": "<matched>",
+      "expectedReadFirstPaths": [
+        "04_Architecture/Config.md",
+        "06_Troubleshooting/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["config", "settings", "env", "manifest"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "04_Architecture/Config.md": 1,
+        "06_Troubleshooting/_index.md": 1,
+        "09_Templates/Feature_Spec.md": 0,
+        "00_Home/Current_Focus.md": 0
+      }
+    },
+    {
+      "id": "GOLDEN-10",
+      "category": "feature_planning",
+      "prompt": "새 기능 기획",
+      "expectedScope": "<matched>",
+      "expectedReadFirstPaths": [
+        "09_Templates/Feature_Spec.md",
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["feature", "plan", "spec", "design"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "09_Templates/Feature_Spec.md": 1,
+        "00_Home/Current_Focus.md": 1,
+        "07_Decisions/Drafts/_index.md": 1,
+        "06_Troubleshooting/Backend/_index.md": 0
+      }
+    }
+  ]
+}

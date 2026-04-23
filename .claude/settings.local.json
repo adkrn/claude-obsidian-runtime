@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(brain-cli recall *)",
+      "Read(//c/Users/adkrn/.claude/plans//**)",
+      "Read(//c/Users/adkrn/.claude/plans/**)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}

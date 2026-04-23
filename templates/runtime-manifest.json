@@ -1,0 +1,12 @@
+{
+  "runtimeVersion": "3.0.0",
+  "projectTag": "{{PROJECT_ID}}",
+  "defaultScope": "repo",
+  "coreHooks": "all",
+  "useRuntimeHome": true,
+  "legacyScriptsRelativePath": null,
+  "surfacePatterns": [],
+  "scopeFolderMap": {},
+  "preserveHooks": [],
+  "sessionEndPipeline": ["all"]
+}
