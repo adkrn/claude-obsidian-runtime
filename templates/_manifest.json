@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "packageVersion": "3.0.0",
-  "generatedAt": "2026-04-23T12:07:32.316Z",
+  "generatedAt": "2026-04-23T12:22:57.712Z",
   "generator": "scripts/build-template-manifest.mjs",
   "files": [
     {
@@ -9,6 +9,12 @@
       "sha256": "aabc75e2536bdf519901ae1a427011d917737aba3bcae0a6385cad72e18c1241",
       "size": 10412,
       "required": true
+    },
+    {
+      "relPath": "agents/_recommended/_common/reflection-agent.md",
+      "sha256": "3308e6f1358e83534244e3c6e5eb180a782ff135a73dfce66aeb866d2afe8501",
+      "size": 6648,
+      "required": false
     },
     {
       "relPath": "agents/_recommended/_common/test-writer.md",
@@ -113,6 +119,12 @@
       "required": false
     },
     {
+      "relPath": "commands/reflection-run.md",
+      "sha256": "448d6a38d59ad836c77c19cad23416f9ad071cca7967678aeccca5c3f5227329",
+      "size": 2386,
+      "required": false
+    },
+    {
       "relPath": "commands/task-close.md",
       "sha256": "9fba07bb317aabf4520de69cd44b134628d345a5feb13ea7ebcc11914a7a56c4",
       "size": 708,
@@ -132,9 +144,15 @@
     },
     {
       "relPath": "eval/golden-tasks.json",
-      "sha256": "92e3219318624f11a00f9124523dd512ee504eecff5bd431d181026465656ff9",
-      "size": 16235,
+      "sha256": "cd23e5d170547f1c1cb5d45d8a6a9bc5bddba1989ed2c53c8922eb09cda91a3c",
+      "size": 19375,
       "required": true
+    },
+    {
+      "relPath": "eval/routing-goldens.json",
+      "sha256": "c7bcf310b2bd2a4f9d01a496b7e5285113d03362fc34f6b796f0a316b80d9d71",
+      "size": 4261,
+      "required": false
     },
     {
       "relPath": "hooks/runtime-post-edit.sh",
@@ -180,8 +198,8 @@
     },
     {
       "relPath": "runtime-manifest.json",
-      "sha256": "332eda52f0ca91909fc9d9cccb8e7728ea186afe7e0e1bc76a67c5be00d96bad",
-      "size": 805,
+      "sha256": "30c85d47b69a76150fc355f3e26f7d27a812d8f19c404aa7608d70f6f8738270",
+      "size": 932,
       "required": true
     },
     {
@@ -201,7 +219,13 @@
       "sha256": "25691650b8b4a8e075b47a4b0a6f4372e6d5615f79fe1d11aa16ba0c6bd23460",
       "size": 357,
       "required": true
+    },
+    {
+      "relPath": "vault/08_Reflections/Drafts/.gitkeep",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0,
+      "required": false
     }
   ],
-  "rootFingerprint": "8da78924a59654be0e29903d888ab8b3e4637c1d2d254d07aa00e161a30ad30e"
+  "rootFingerprint": "ece73f46fac69a4f31a391254a5d9f7dbd5ec47876d1dd9d24755fea575d384f"
 }

@@ -480,6 +480,100 @@
         "00_Home/Current_Focus.md": 1,
         "04_Architecture/_index.md": 1
       }
+    },
+    {
+      "id": "GOLDEN-31",
+      "category": "reflection_trigger",
+      "prompt": "월간 회고 실행",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md",
+        "08_Reflections/Drafts/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["reflection", "monthly", "draft"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "08_Reflections/Drafts/_index.md": 1,
+        "08_Lessons/Drafts/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-32",
+      "category": "reflection_input_range",
+      "prompt": "지난 30일 lesson 메타 회고 작성",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "08_Lessons/Drafts/_index.md",
+        "08_Reflections/Drafts/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["lesson", "30일", "회고", "pattern"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "08_Lessons/Drafts/_index.md": 1,
+        "08_Reflections/Drafts/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-33",
+      "category": "reflection_delegation_stats",
+      "prompt": "위임 통계 포함 메타 회고",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "08_Reflections/Drafts/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["delegation", "governance", "callee", "outcome"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "08_Reflections/Drafts/_index.md": 1,
+        "10_Worklogs/Auto/_latest.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-34",
+      "category": "routing_evaluation",
+      "prompt": "routing 평가 지표 4종 측정",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "04_Architecture/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["routing", "delegation", "correctness", "bouncing", "loop", "recovery"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "04_Architecture/_index.md": 1,
+        "08_Lessons/Drafts/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-35",
+      "category": "reflection_pattern_extraction",
+      "prompt": "반복 실수 패턴 추출",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "06_Troubleshooting/_index.md",
+        "08_Lessons/Drafts/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["pattern", "jaccard", "cluster", "recurrence"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "06_Troubleshooting/_index.md": 1,
+        "08_Lessons/Drafts/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-36",
+      "category": "reflection_duplicate_run",
+      "prompt": "같은 월 회고 재실행",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "08_Reflections/Drafts/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["overwrite", "merge", "cancel", "duplicate"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "08_Reflections/Drafts/_index.md": 1,
+        "00_Home/Current_Focus.md": 1
+      }
     }
   ]
 }

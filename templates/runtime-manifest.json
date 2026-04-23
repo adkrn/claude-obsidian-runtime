@@ -13,7 +13,10 @@
   "agentFanoutCap": 2,
   "reflection": {
     "interval": "monthly",
-    "enabled": false
+    "enabled": false,
+    "maxInputFiles": 100,
+    "windowDays": 30,
+    "inputScopes": ["lessons", "decisions", "troubleshooting", "delegations"]
   },
   "forgetting": {
     "maxIdleDays": 180,

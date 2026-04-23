@@ -1,0 +1,112 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "P3 Routing 4-metric goldens — delegation correctness / bouncing / loop / recovery 검증용 결정적 시뮬레이션 케이스.",
+  "cases": [
+    {
+      "id": "ROUTING-01",
+      "prompt": "리액트 컴포넌트 tsx styling 리뷰 요청",
+      "installedAgents": [
+        "{{PROJECT_ID}}-frontend-reviewer",
+        "{{PROJECT_ID}}-api-designer",
+        "{{PROJECT_ID}}-test-writer"
+      ],
+      "expectedCallee": "{{PROJECT_ID}}-frontend-reviewer",
+      "metric": "delegation_correctness"
+    },
+    {
+      "id": "ROUTING-02",
+      "prompt": "새 REST API endpoint 추가 설계",
+      "installedAgents": [
+        "{{PROJECT_ID}}-frontend-reviewer",
+        "{{PROJECT_ID}}-api-designer",
+        "{{PROJECT_ID}}-test-writer"
+      ],
+      "expectedCallee": "{{PROJECT_ID}}-api-designer",
+      "metric": "delegation_correctness"
+    },
+    {
+      "id": "ROUTING-03",
+      "prompt": "vitest 테스트 작성",
+      "installedAgents": [
+        "{{PROJECT_ID}}-frontend-reviewer",
+        "{{PROJECT_ID}}-test-writer"
+      ],
+      "expectedCallee": "{{PROJECT_ID}}-test-writer",
+      "metric": "delegation_correctness"
+    },
+    {
+      "id": "ROUTING-04",
+      "prompt": "일반 질문인데 특별한 키워드 없음",
+      "installedAgents": [
+        "{{PROJECT_ID}}-frontend-reviewer",
+        "{{PROJECT_ID}}-api-designer"
+      ],
+      "expectedCallee": "lead",
+      "metric": "delegation_correctness"
+    },
+    {
+      "id": "ROUTING-05",
+      "prompt": "프로젝트 설정 리뷰",
+      "installedAgents": [
+        "{{PROJECT_ID}}-frontend-reviewer",
+        "{{PROJECT_ID}}-api-designer",
+        "{{PROJECT_ID}}-docs-writer"
+      ],
+      "expectedCallee": "lead",
+      "allowedFallback": ["{{PROJECT_ID}}-docs-writer"],
+      "metric": "delegation_correctness"
+    },
+    {
+      "id": "ROUTING-06",
+      "prompt": "bouncing 2회 전환 시나리오",
+      "expectedCallee": "lead",
+      "metric": "bouncing",
+      "simulatedTrace": [
+        { "caller": "lead", "callee": "agent-a", "task_id": "t-bounce-1", "outcome": "bounced", "ts_offset_seconds": 0 },
+        { "caller": "lead", "callee": "agent-b", "task_id": "t-bounce-1", "outcome": "bounced", "ts_offset_seconds": 30 },
+        { "caller": "lead", "callee": "agent-a", "task_id": "t-bounce-1", "outcome": "success", "ts_offset_seconds": 60 }
+      ]
+    },
+    {
+      "id": "ROUTING-07",
+      "prompt": "no-bouncing 단일 callee 시나리오",
+      "expectedCallee": "lead",
+      "metric": "bouncing",
+      "simulatedTrace": [
+        { "caller": "lead", "callee": "agent-a", "task_id": "t-stable-1", "outcome": "success", "ts_offset_seconds": 0 },
+        { "caller": "lead", "callee": "agent-a", "task_id": "t-stable-1", "outcome": "success", "ts_offset_seconds": 30 }
+      ]
+    },
+    {
+      "id": "ROUTING-08",
+      "prompt": "loop detection 3회 반복 시나리오",
+      "expectedCallee": "lead",
+      "metric": "loop",
+      "simulatedTrace": [
+        { "caller": "lead", "callee": "agent-a", "task_id": "t-loop-1", "outcome": "success", "ts_offset_seconds": 0 },
+        { "caller": "lead", "callee": "agent-a", "task_id": "t-loop-1", "outcome": "success", "ts_offset_seconds": 60 },
+        { "caller": "lead", "callee": "agent-a", "task_id": "t-loop-1", "outcome": "success", "ts_offset_seconds": 120 }
+      ]
+    },
+    {
+      "id": "ROUTING-09",
+      "prompt": "recovery after bounced 시나리오",
+      "expectedCallee": "lead",
+      "metric": "recovery",
+      "simulatedTrace": [
+        { "caller": "lead", "callee": "agent-a", "task_id": "t-rec-1", "outcome": "bounced", "ts_offset_seconds": 0 },
+        { "caller": "lead", "callee": "agent-b", "task_id": "t-rec-1", "outcome": "success", "ts_offset_seconds": 60 }
+      ]
+    },
+    {
+      "id": "ROUTING-10",
+      "prompt": "no recovery (bounced then failed)",
+      "expectedCallee": "lead",
+      "metric": "recovery",
+      "simulatedTrace": [
+        { "caller": "lead", "callee": "agent-a", "task_id": "t-norec-1", "outcome": "bounced", "ts_offset_seconds": 0 },
+        { "caller": "lead", "callee": "agent-b", "task_id": "t-norec-1", "outcome": "failed", "ts_offset_seconds": 60 }
+      ]
+    }
+  ]
+}
