@@ -45,6 +45,7 @@ export function isRequiredTemplate(relPath) {
   if (normalized === 'runtime-manifest.json') return true;
   if (/^vault\/00_Home\/[^/]+\.md$/.test(normalized)) return true;
   if (normalized === 'eval/golden-tasks.json') return true;
+  if (normalized === 'agents/_lead.md') return true;
   return false;
 }
 

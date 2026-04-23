@@ -1,9 +1,15 @@
 {
   "schemaVersion": "1.0.0",
   "packageVersion": "3.0.0",
-  "generatedAt": "2026-04-23T05:07:56.654Z",
+  "generatedAt": "2026-04-23T05:36:59.976Z",
   "generator": "scripts/build-template-manifest.mjs",
   "files": [
+    {
+      "relPath": "agents/_lead.md",
+      "sha256": "8bcd5b2ba6ef827fb5f6613abc1a9a35af9a44ccb495501755d290d75b11188b",
+      "size": 2912,
+      "required": true
+    },
     {
       "relPath": "commands/architecture-promote.md",
       "sha256": "c53074203d6af4f6e8ccd80f8a2290a05d3a7e726980c93bf2a55e424f5674c1",
@@ -119,5 +125,5 @@
       "required": true
     }
   ],
-  "rootFingerprint": "38c444a656dadcaba92cdcc1991a609704764f9f0ef14e498b3bfebfed74999b"
+  "rootFingerprint": "163f75401d0c8d86fbeb13b486f0ac95ff67c40c99ba8bca033902eb07b4b0d3"
 }

@@ -3,24 +3,30 @@
 /**
  * Initialize a new project for Obsidian-Claude runtime integration (v3.0.0).
  *
+ * Wave 3 A3 — 기획서 §5-①/③ + §12-5 managedRoots 9개 + §12-4 doctor 자동 호출.
+ *
  * Usage:
- *   claude-obsidian-runtime init --project-id <id> --project-dir <path> [--vault-root <path>]
- *   (if --project-dir omitted, uses cwd)
+ *   claude-obsidian-runtime init --project-id <id> --vault-root <path>
+ *                                [--project-dir <path>] [--preserve] [--no-doctor]
+ *                                [--force] [--skip-hooks]
  *
  * Does:
- *   1. Create Obsidian vault folders (00_Home, 04_Architecture, ... 10_Worklogs)
+ *   1. Create 9 managed vault roots (§12-5 v3.1) + Drafts/Auto subfolders
  *   2. Copy vault templates (Index, Current_Focus, Reading_Order) with {{PROJECT_ID}} substitution
  *   3. Copy obsidian_paths.json, context_routes.json, runtime-manifest.json templates
  *   4. Create .claude/runtime/ subdirectories
  *   5. Copy .claude/commands/*.md slash command templates
- *   6. Invoke install-hooks to register hooks and patch settings.json
+ *   6. Copy templates/agents/_lead.md → .claude/agents/<projectId>-lead.md (§5-③ AC-15)
+ *   7. Copy templates/eval/golden-tasks.json → .claude/runtime/eval/golden-tasks.json
+ *   8. Invoke install-hooks to register hooks and patch settings.json
+ *   9. Invoke doctor --full --since-init (§12-4) unless --no-doctor
  *
- * Idempotent: existing files are not overwritten.
+ * Idempotent: existing files are not overwritten (see --force for lead upsert).
  */
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
+import { spawnSync } from 'child_process';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,168 +34,359 @@ const __dirname = path.dirname(__filename);
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const TEMPLATES_DIR = path.join(PACKAGE_ROOT, 'templates');
 
-const DEFAULT_VAULT_FOLDERS = [
+/**
+ * §12-5 v3.1 — managedRoots 9개 기본값 (L3/L4 신설 포함).
+ */
+export const DEFAULT_MANAGED_ROOTS_9 = [
   '00_Home',
   '04_Architecture',
+  '06_Troubleshooting',
+  '07_Decisions',
+  '08_Lessons',
+  '08_Reflections',
+  '09_Templates',
+  '09_Templates/Procedures',
+  '10_Worklogs'
+];
+
+/**
+ * 각 managedRoot 아래에 생성하는 Drafts/Auto 서브폴더. init은 빈 디렉토리만 준비한다.
+ */
+const MANAGED_ROOT_SUBDIRS = [
   '04_Architecture/Drafts',
   '04_Architecture/Generated',
-  '06_Troubleshooting',
   '06_Troubleshooting/Drafts',
-  '07_Decisions',
   '07_Decisions/Drafts',
-  '08_Lessons',
   '08_Lessons/Drafts',
-  '09_Templates',
-  '10_Worklogs',
+  '08_Reflections/Drafts',
   '10_Worklogs/Auto'
 ];
 
-const RUNTIME_SUBDIRS = ['tasks', 'events', 'retrieval', 'code-index', 'knowledge', 'architecture'];
+const RUNTIME_SUBDIRS = [
+  'tasks',
+  'events',
+  'retrieval',
+  'code-index',
+  'knowledge',
+  'architecture',
+  'eval'
+];
 
-function parseArgs(argv) {
-  const args = {};
+export function parseArgs(argv) {
+  const args = {
+    projectId: '',
+    projectDir: '',
+    vaultRoot: '',
+    preserve: false,
+    noDoctor: false,
+    force: false,
+    skipHooks: false,
+    help: false
+  };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--project-id' && argv[i + 1]) { args.projectId = argv[i + 1]; i++; }
-    else if (argv[i] === '--project-dir' && argv[i + 1]) { args.projectDir = argv[i + 1]; i++; }
-    else if (argv[i] === '--vault-root' && argv[i + 1]) { args.vaultRoot = argv[i + 1]; i++; }
-    else if (argv[i] === '--skip-hooks') { args.skipHooks = true; }
+    const a = argv[i];
+    if (a === '--project-id' && argv[i + 1]) { args.projectId = argv[++i]; }
+    else if (a === '--project-dir' && argv[i + 1]) { args.projectDir = argv[++i]; }
+    else if (a === '--vault-root' && argv[i + 1]) { args.vaultRoot = argv[++i]; }
+    else if (a === '--preserve') { args.preserve = true; }
+    else if (a === '--no-doctor') { args.noDoctor = true; }
+    else if (a === '--force') { args.force = true; }
+    else if (a === '--skip-hooks') { args.skipHooks = true; }
+    else if (a === '--help' || a === '-h') { args.help = true; }
   }
   return args;
 }
 
 function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
 
-function substitute(content, vars) {
+export function substitute(content, vars) {
   return Object.entries(vars).reduce(
     (acc, [k, v]) => acc.replaceAll(`{{${k}}}`, v),
     content
   );
 }
 
-function writeFileIfMissing(target, content) {
-  if (fs.existsSync(target)) return false;
-  ensureDir(path.dirname(target));
-  fs.writeFileSync(target, content, 'utf8');
-  return true;
+function usage() {
+  return [
+    'Usage: claude-obsidian-runtime init --project-id <id> --vault-root <path>',
+    '                                    [--project-dir <path>] [--preserve]',
+    '                                    [--no-doctor] [--force] [--skip-hooks]',
+    '',
+    '  --project-id <id>     (필수) 프로젝트 식별자 (예: talksim, poeact)',
+    '  --vault-root <path>   (필수) Obsidian 볼트 경로',
+    '  --project-dir <path>  (선택) 프로젝트 루트 (기본: cwd)',
+    '  --preserve            (선택) 기존 파일 덮어쓰지 않음 (default)',
+    '  --no-doctor           (선택) doctor --full --since-init 자동 호출 skip',
+    '  --force               (선택) <projectId>-lead.md 덮어쓰기 허용',
+    '  --skip-hooks          (선택) install-hooks 호출 skip'
+  ].join('\n');
 }
 
-function copyTemplate(templateRel, targetPath, vars) {
-  const src = path.join(TEMPLATES_DIR, templateRel);
+/**
+ * 순수 함수: init 스캐폴드 실행 (doctor/install-hooks 부수 효과 제외).
+ * @returns {{ created: string[], skipped: string[], missingTemplates: string[], leadPath: string, vaultRoot: string, projectDir: string }}
+ */
+export function runInit(opts) {
+  const {
+    projectId,
+    projectDir,
+    vaultRoot,
+    preserve = false,
+    force = false,
+    templatesDir = TEMPLATES_DIR
+  } = opts;
+
+  if (!projectId) throw new Error('projectId required');
+  if (!projectDir) throw new Error('projectDir required');
+  if (!vaultRoot) throw new Error('vaultRoot required');
+
+  const vars = {
+    PROJECT_ID: projectId,
+    VAULT_ROOT: vaultRoot.replace(/\\/g, '/')
+  };
+
+  const report = {
+    created: [],
+    skipped: [],
+    missingTemplates: [],
+    leadPath: '',
+    vaultRoot,
+    projectDir
+  };
+
+  const record = (status, target) => {
+    if (status === 'written') report.created.push(target);
+    else if (status === 'skipped') report.skipped.push(target);
+    else if (status === 'missing') report.missingTemplates.push(target);
+  };
+
+  // 1. 9 managed vault roots + subdirs
+  for (const root of DEFAULT_MANAGED_ROOTS_9) {
+    ensureDir(path.join(vaultRoot, ...root.split('/')));
+  }
+  for (const sub of MANAGED_ROOT_SUBDIRS) {
+    ensureDir(path.join(vaultRoot, ...sub.split('/')));
+  }
+
+  // 2. vault 00_Home/*.md
+  const vaultFiles = [
+    {
+      templateRel: 'vault/00_Home/_Index.md',
+      target: path.join(vaultRoot, '00_Home', `${projectId}_Index.md`)
+    },
+    {
+      templateRel: 'vault/00_Home/Current_Focus.md',
+      target: path.join(vaultRoot, '00_Home', 'Current_Focus.md')
+    },
+    {
+      templateRel: 'vault/00_Home/Reading_Order.md',
+      target: path.join(vaultRoot, '00_Home', 'Reading_Order.md')
+    }
+  ];
+  for (const { templateRel, target } of vaultFiles) {
+    const { status } = copyTemplateWith(templatesDir, templateRel, target, vars, false);
+    record(status, target);
+  }
+
+  // 3. _meta/ configs
+  const metaDir = path.join(projectDir, 'document', 'obsidian_context', '_meta');
+  ensureDir(metaDir);
+  const metaFiles = [
+    { templateRel: 'obsidian_paths.json', target: path.join(metaDir, 'obsidian_paths.json') },
+    { templateRel: 'context_routes.json', target: path.join(metaDir, 'context_routes.json') }
+  ];
+  for (const { templateRel, target } of metaFiles) {
+    const { status } = copyTemplateWith(templatesDir, templateRel, target, vars, false);
+    record(status, target);
+  }
+
+  // 4. .claude/runtime/ subdirs
+  const runtimeDir = path.join(projectDir, '.claude', 'runtime');
+  for (const subdir of RUNTIME_SUBDIRS) {
+    ensureDir(path.join(runtimeDir, subdir));
+  }
+
+  // 5. runtime-manifest.json
+  const manifestTarget = path.join(projectDir, '.claude', 'runtime-manifest.json');
+  {
+    const { status } = copyTemplateWith(templatesDir, 'runtime-manifest.json', manifestTarget, vars, false);
+    record(status, manifestTarget);
+  }
+
+  // 6. slash command templates
+  const commandsDir = path.join(projectDir, '.claude', 'commands');
+  ensureDir(commandsDir);
+  const commandsTemplateDir = path.join(templatesDir, 'commands');
+  if (fs.existsSync(commandsTemplateDir)) {
+    const cmdFiles = fs.readdirSync(commandsTemplateDir).filter((f) => f.endsWith('.md'));
+    for (const cmd of cmdFiles) {
+      const target = path.join(commandsDir, cmd);
+      const { status } = copyTemplateWith(templatesDir, `commands/${cmd}`, target, vars, false);
+      record(status, target);
+    }
+  }
+
+  // 7. <projectId>-lead.md (§5-③ AC-15)
+  const agentsDir = path.join(projectDir, '.claude', 'agents');
+  ensureDir(agentsDir);
+  const leadTarget = path.join(agentsDir, `${projectId}-lead.md`);
+  // preserve=true 이면 force 무시하고 기존 보존, preserve=false 이면 force에 따라 덮어쓰기 여부 결정
+  const leadForce = force && !preserve;
+  {
+    const { status, src } = copyTemplateWith(templatesDir, 'agents/_lead.md', leadTarget, vars, leadForce);
+    if (status === 'missing') {
+      report.missingTemplates.push(src);
+    } else {
+      record(status, leadTarget);
+    }
+    report.leadPath = leadTarget;
+  }
+
+  // 8. eval/golden-tasks.json (Wave 1 C1 seed)
+  const evalTarget = path.join(runtimeDir, 'eval', 'golden-tasks.json');
+  {
+    const src = path.join(templatesDir, 'eval', 'golden-tasks.json');
+    if (!fs.existsSync(src)) {
+      report.missingTemplates.push(src);
+    } else if (fs.existsSync(evalTarget) && !force) {
+      report.skipped.push(evalTarget);
+    } else {
+      ensureDir(path.dirname(evalTarget));
+      fs.copyFileSync(src, evalTarget);
+      report.created.push(evalTarget);
+    }
+  }
+
+  return report;
+}
+
+function copyTemplateWith(templatesDir, templateRel, targetPath, vars, force) {
+  const src = path.join(templatesDir, templateRel);
   if (!fs.existsSync(src)) {
-    console.error(`[init] Template not found: ${templateRel}`);
-    return false;
+    return { status: 'missing', src };
   }
   const raw = fs.readFileSync(src, 'utf8');
   const content = substitute(raw, vars);
-  return writeFileIfMissing(targetPath, content);
+  if (fs.existsSync(targetPath) && !force) {
+    return { status: 'skipped', src };
+  }
+  ensureDir(path.dirname(targetPath));
+  fs.writeFileSync(targetPath, content, 'utf8');
+  return { status: 'written', src };
+}
+
+/**
+ * doctor --full --since-init 자동 호출 (§12-4).
+ * @returns {{ invoked: boolean, status: number|null }}
+ */
+export function runDoctorAfterInit({ projectDir, packageRoot = PACKAGE_ROOT, skip = false }) {
+  if (skip) return { invoked: false, status: null };
+  const doctorPath = path.join(packageRoot, 'commands', 'doctor.mjs');
+  if (!fs.existsSync(doctorPath)) {
+    return { invoked: false, status: null };
+  }
+  const result = spawnSync(
+    process.execPath,
+    [doctorPath, '--full', '--since-init', '--project-dir', projectDir],
+    { stdio: 'inherit' }
+  );
+  return { invoked: true, status: result.status };
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  if (!args.projectId) {
-    console.error('Usage: claude-obsidian-runtime init --project-id <id> [--project-dir <path>] [--vault-root <path>] [--skip-hooks]');
-    process.exit(1);
+  if (args.help) {
+    process.stdout.write(usage() + '\n');
+    return;
+  }
+
+  if (!args.projectId || !args.vaultRoot) {
+    process.stderr.write('error: --project-id and --vault-root are required.\n\n');
+    process.stderr.write(usage() + '\n');
+    process.exit(2);
   }
 
   const projectDir = path.resolve(args.projectDir || process.cwd());
-  const obsidianHome = process.platform === 'win32' ? 'C:\\Obsidian' : path.join(os.homedir(), 'Obsidian');
-  const vaultRoot = path.resolve(args.vaultRoot || path.join(obsidianHome, args.projectId));
-  const vars = {
-    PROJECT_ID: args.projectId,
-    VAULT_ROOT: vaultRoot.replace(/\\/g, '/')
-  };
+  const vaultRoot = path.resolve(args.vaultRoot);
 
-  console.log(`claude-obsidian-runtime init`);
-  console.log(`  Project ID:   ${args.projectId}`);
-  console.log(`  Project dir:  ${projectDir}`);
-  console.log(`  Vault root:   ${vaultRoot}`);
-  console.log('');
+  process.stdout.write('claude-obsidian-runtime init\n');
+  process.stdout.write(`  Project ID:   ${args.projectId}\n`);
+  process.stdout.write(`  Project dir:  ${projectDir}\n`);
+  process.stdout.write(`  Vault root:   ${vaultRoot}\n`);
+  process.stdout.write('\n');
 
-  const report = { created: [], skipped: [] };
-
-  // 1. Create vault folders
-  for (const folder of DEFAULT_VAULT_FOLDERS) {
-    ensureDir(path.join(vaultRoot, ...folder.split('/')));
-  }
-  console.log(`  [vault] Created ${DEFAULT_VAULT_FOLDERS.length} folders`);
-
-  // 2. Copy vault templates
-  const vaultFiles = [
-    { template: 'vault/00_Home/_Index.md', target: path.join(vaultRoot, '00_Home', `${args.projectId}_Index.md`) },
-    { template: 'vault/00_Home/Current_Focus.md', target: path.join(vaultRoot, '00_Home', 'Current_Focus.md') },
-    { template: 'vault/00_Home/Reading_Order.md', target: path.join(vaultRoot, '00_Home', 'Reading_Order.md') }
-  ];
-  for (const { template, target } of vaultFiles) {
-    const created = copyTemplate(template, target, vars);
-    (created ? report.created : report.skipped).push(target);
+  let report;
+  try {
+    report = runInit({
+      projectId: args.projectId,
+      projectDir,
+      vaultRoot,
+      preserve: args.preserve,
+      force: args.force
+    });
+  } catch (err) {
+    process.stderr.write(`[init] ${err.message}\n`);
+    process.exit(1);
   }
 
-  // 3. Copy _meta/ configs
-  const metaDir = path.join(projectDir, 'document', 'obsidian_context', '_meta');
-  ensureDir(metaDir);
-  const metaFiles = [
-    { template: 'obsidian_paths.json', target: path.join(metaDir, 'obsidian_paths.json') },
-    { template: 'context_routes.json', target: path.join(metaDir, 'context_routes.json') }
-  ];
-  for (const { template, target } of metaFiles) {
-    const created = copyTemplate(template, target, vars);
-    (created ? report.created : report.skipped).push(target);
-  }
+  process.stdout.write(`  [vault] ${DEFAULT_MANAGED_ROOTS_9.length} managed roots ready\n`);
+  process.stdout.write(`  [runtime] ${RUNTIME_SUBDIRS.length} subdirs ready\n`);
+  process.stdout.write(`  [lead] ${report.leadPath}\n`);
+  process.stdout.write(`  [eval] ${path.join(projectDir, '.claude', 'runtime', 'eval', 'golden-tasks.json')}\n`);
 
-  // 4. Create .claude/runtime/ subdirs
-  const runtimeDir = path.join(projectDir, '.claude', 'runtime');
-  for (const subdir of RUNTIME_SUBDIRS) {
-    ensureDir(path.join(runtimeDir, subdir));
-  }
-  console.log(`  [runtime] Created ${RUNTIME_SUBDIRS.length} subdirs`);
-
-  // 5. Copy runtime-manifest.json
-  const manifestTarget = path.join(projectDir, '.claude', 'runtime-manifest.json');
-  const manifestCreated = copyTemplate('runtime-manifest.json', manifestTarget, vars);
-  (manifestCreated ? report.created : report.skipped).push(manifestTarget);
-
-  // 6. Copy slash command templates
-  const commandsDir = path.join(projectDir, '.claude', 'commands');
-  ensureDir(commandsDir);
-  const commandTemplates = fs.readdirSync(path.join(TEMPLATES_DIR, 'commands')).filter((f) => f.endsWith('.md'));
-  for (const cmd of commandTemplates) {
-    const target = path.join(commandsDir, cmd);
-    const created = copyTemplate(`commands/${cmd}`, target, vars);
-    (created ? report.created : report.skipped).push(target);
-  }
-  console.log(`  [commands] ${commandTemplates.length} slash command template(s)`);
-
-  // 7. Invoke install-hooks
+  // install-hooks
   if (!args.skipHooks) {
-    console.log('');
-    console.log('  [hooks] Running install-hooks...');
-    process.argv = [process.argv[0], 'install-hooks', '--project-dir', projectDir];
+    process.stdout.write('\n  [hooks] Running install-hooks...\n');
     try {
+      const installArgv = ['install-hooks', '--project-dir', projectDir];
+      if (args.preserve) installArgv.push('--preserve');
+      process.argv = [process.argv[0], ...installArgv];
       await import(pathToFileURL(path.join(PACKAGE_ROOT, 'commands', 'install-hooks.mjs')).href);
     } catch (err) {
-      console.error(`  [hooks] FAILED: ${err.message}`);
+      process.stderr.write(`  [hooks] FAILED: ${err.message}\n`);
     }
   } else {
-    console.log('  [hooks] Skipped (--skip-hooks)');
+    process.stdout.write('  [hooks] Skipped (--skip-hooks)\n');
   }
 
-  console.log('');
-  console.log(`Initialized project: ${args.projectId}`);
-  console.log(`  Created: ${report.created.length} file(s)`);
-  console.log(`  Skipped (already exist): ${report.skipped.length} file(s)`);
-  console.log('');
-  console.log('Next steps:');
-  console.log(`  1. export CLAUDE_RUNTIME_HOME="${PACKAGE_ROOT.replace(/\\/g, '/')}"`);
-  console.log(`  2. Edit ${manifestTarget} to set projectTag, defaultScope, surfacePatterns`);
-  console.log(`  3. Edit ${path.join(metaDir, 'obsidian_paths.json')} to add indexTargets, scanRoots`);
-  console.log(`  4. Run: claude-obsidian-runtime sync`);
-  console.log(`  5. Run: claude-obsidian-runtime doctor --full`);
+  process.stdout.write('\n');
+  process.stdout.write(`Initialized project: ${args.projectId}\n`);
+  process.stdout.write(`  Created: ${report.created.length} file(s)\n`);
+  process.stdout.write(`  Skipped (already exist): ${report.skipped.length} file(s)\n`);
+  if (report.missingTemplates.length > 0) {
+    process.stdout.write(`  Missing templates: ${report.missingTemplates.length}\n`);
+  }
+
+  // doctor
+  if (!args.noDoctor) {
+    process.stdout.write('\n  [doctor] Running doctor --full --since-init...\n');
+    const { invoked, status } = runDoctorAfterInit({ projectDir, skip: false });
+    if (invoked) {
+      process.stdout.write(`  [doctor] exit code ${status}\n`);
+      if (status && status !== 0) {
+        process.exit(status);
+      }
+    } else {
+      process.stdout.write('  [doctor] skipped (commands/doctor.mjs missing)\n');
+    }
+  } else {
+    process.stdout.write('  [doctor] Skipped (--no-doctor)\n');
+  }
+
+  process.stdout.write('\nNext steps:\n');
+  process.stdout.write(`  1. export CLAUDE_RUNTIME_HOME="${PACKAGE_ROOT.replace(/\\/g, '/')}"\n`);
+  process.stdout.write(`  2. Edit .claude/runtime-manifest.json to set defaultScope, surfacePatterns\n`);
+  process.stdout.write(`  3. Edit document/obsidian_context/_meta/obsidian_paths.json to add indexTargets, scanRoots\n`);
+  process.stdout.write(`  4. Run: claude-obsidian-runtime sync\n`);
 }
 
-main().catch((err) => {
-  console.error('[init] Error:', err.message);
-  process.exit(1);
-});
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+if (__filename === invokedPath) {
+  main().catch((err) => {
+    process.stderr.write(`[init] Error: ${err.message}\n`);
+    process.exit(1);
+  });
+}
 
 export { main as initProject };
