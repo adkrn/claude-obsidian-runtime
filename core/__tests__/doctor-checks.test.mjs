@@ -12,6 +12,7 @@ import {
   checkLeadAgent,
   checkCodeIndex,
   checkKnowledgeIndex,
+  checkTaskStartDryRun,
   checkPrerequisites,
   checkTemplateIntegrity,
   checkPerformanceObservability,
@@ -62,9 +63,9 @@ function baseCtx(sb) {
 }
 
 describe('doctor-checks ID coverage', () => {
-  it('exports 11 checks (C09 excluded)', () => {
-    assert.equal(ALL_CHECK_IDS.length, 11);
-    assert.ok(!ALL_CHECK_IDS.includes('c09'));
+  it('exports 12 checks (C01..C12, all present)', () => {
+    assert.equal(ALL_CHECK_IDS.length, 12);
+    assert.ok(ALL_CHECK_IDS.includes('c09'));
   });
 });
 
@@ -392,5 +393,70 @@ describe('C12 checkPerformanceObservability', () => {
     writeFileSafe(path.join(usageDir, 'c.json'), JSON.stringify({ totalTokens: 2000 }));
     const c = checkPerformanceObservability(baseCtx(sb));
     assert.equal(c.status, 'fail');
+  });
+});
+
+describe('C09 checkTaskStartDryRun', () => {
+  let sb;
+  before(() => {
+    sb = makeSandbox();
+    // Stub task-start CLI inside sandbox packageRoot
+    const commandsDir = path.join(sb.packageRoot, 'commands');
+    fs.mkdirSync(commandsDir, { recursive: true });
+  });
+  after(() => cleanupSandbox(sb));
+
+  it('FAIL when task-start.mjs missing from packageRoot', () => {
+    const c = checkTaskStartDryRun(baseCtx(sb));
+    assert.equal(c.status, 'fail');
+    assert.equal(c.id, 'c09');
+    assert.match(c.message, /task-start CLI missing/);
+  });
+
+  it('PASS when task-start prints 9-field JSON on last line', () => {
+    const stub = `#!/usr/bin/env node
+const payload = {
+  taskId: 'probe', readFirst: [], codeHits: [], knowledgeHits: [],
+  guardrails: [], matchedScopes: [], matchedGroups: [],
+  currentTaskPath: '/tmp/current.json', lastContextPath: '/tmp/last.json'
+};
+process.stdout.write(JSON.stringify(payload) + "\\n");
+`;
+    writeFileSafe(path.join(sb.packageRoot, 'commands', 'task-start.mjs'), stub);
+    const c = checkTaskStartDryRun(baseCtx(sb));
+    assert.equal(c.status, 'pass', c.message);
+    assert.match(c.message, /9\/9 fields present/);
+  });
+
+  it('FAIL when a required field is missing', () => {
+    const stub = `#!/usr/bin/env node
+const payload = { taskId: 'probe', readFirst: [] };
+process.stdout.write(JSON.stringify(payload) + "\\n");
+`;
+    writeFileSafe(path.join(sb.packageRoot, 'commands', 'task-start.mjs'), stub);
+    const c = checkTaskStartDryRun(baseCtx(sb));
+    assert.equal(c.status, 'fail');
+    assert.match(c.message, /field\(s\) missing/);
+  });
+
+  it('FAIL when task-start exits non-zero', () => {
+    const stub = `#!/usr/bin/env node
+process.stderr.write('boom\\n');
+process.exit(2);
+`;
+    writeFileSafe(path.join(sb.packageRoot, 'commands', 'task-start.mjs'), stub);
+    const c = checkTaskStartDryRun(baseCtx(sb));
+    assert.equal(c.status, 'fail');
+    assert.match(c.message, /task-start exited 2/);
+  });
+
+  it('FAIL when stdout is not JSON', () => {
+    const stub = `#!/usr/bin/env node
+process.stdout.write('hello world\\n');
+`;
+    writeFileSafe(path.join(sb.packageRoot, 'commands', 'task-start.mjs'), stub);
+    const c = checkTaskStartDryRun(baseCtx(sb));
+    assert.equal(c.status, 'fail');
+    assert.match(c.message, /not JSON/);
   });
 });

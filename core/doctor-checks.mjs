@@ -474,15 +474,115 @@ export function checkKnowledgeIndex(ctx) {
 }
 
 /* --------------------------------------------------------------------
- * C09 checkTaskStartDryRun — TODO (Wave 2)
- * depends on commands/task-start.mjs --dry-run flag (PATCH_Phase1 §3).
- * Spawn contract (for Wave 2 reference):
- *   node ${CLAUDE_RUNTIME_HOME}/commands/task-start.mjs --dry-run
+ * C09 checkTaskStartDryRun (Wave 2 — PATCH_Phase1 §3-D)
+ * Spawn contract:
+ *   node ${packageRoot}/commands/task-start.mjs --dry-run
  *        --task "doctor probe" --project-dir <projectDir>
- *   SUCCESS = exit 0 + 1-line JSON with 9 fields:
- *   taskId, readFirst, codeHits, knowledgeHits, guardrails,
- *   matchedScopes, matchedGroups, currentTaskPath, lastContextPath
+ *   SUCCESS = exit 0 + last-line JSON with 9 required fields.
  * -------------------------------------------------------------------- */
+
+const DOCTOR_TIMEOUT_MS = Number(process.env.DOCTOR_TIMEOUT_MS || 30000);
+
+const REQUIRED_DRY_RUN_FIELDS = [
+  'taskId',
+  'readFirst',
+  'codeHits',
+  'knowledgeHits',
+  'guardrails',
+  'matchedScopes',
+  'matchedGroups',
+  'currentTaskPath',
+  'lastContextPath'
+];
+
+/**
+ * C09 — task-start --dry-run JSON schema (9 required fields).
+ * @param {CheckContext} ctx
+ * @returns {Check}
+ */
+export function checkTaskStartDryRun(ctx) {
+  const start = now();
+  const check = makeCheck('c09', 'task-start dry-run schema');
+  const taskStartPath = path.join(ctx.packageRoot, 'commands', 'task-start.mjs');
+  if (!fs.existsSync(taskStartPath)) {
+    return finishFail(check, start, `task-start CLI missing: ${taskStartPath}`, {
+      remedy: 'Reinstall: npm install -g claude-obsidian-runtime@latest'
+    });
+  }
+
+  const env = { ...process.env };
+  env.CLAUDE_PROJECT_DIR = ctx.projectDir;
+  env.SESSION_ID = `doctor-probe-${Date.now()}`;
+
+  let result;
+  try {
+    result = spawnSync(
+      process.execPath,
+      [
+        taskStartPath,
+        '--dry-run',
+        '--task',
+        'doctor probe',
+        '--project-dir',
+        ctx.projectDir
+      ],
+      {
+        encoding: 'utf8',
+        timeout: DOCTOR_TIMEOUT_MS,
+        env
+      }
+    );
+  } catch (err) {
+    return finishFail(check, start, `spawn failed: ${err.message}`);
+  }
+
+  if (result.error) {
+    const msg = result.error.code === 'ETIMEDOUT'
+      ? `timed out after ${DOCTOR_TIMEOUT_MS}ms`
+      : `spawn error: ${result.error.message}`;
+    return finishFail(check, start, msg);
+  }
+
+  if (result.status !== 0) {
+    const stderrSnip = String(result.stderr || '').trim().slice(0, 200);
+    return finishFail(
+      check,
+      start,
+      `task-start exited ${result.status}${stderrSnip ? `: ${stderrSnip}` : ''}`
+    );
+  }
+
+  const stdout = String(result.stdout || '').trim();
+  if (!stdout) {
+    return finishFail(check, start, 'task-start produced no stdout');
+  }
+  const lastLine = stdout.split(/\r?\n/).filter(Boolean).at(-1) || '';
+  let json;
+  try {
+    json = JSON.parse(lastLine);
+  } catch {
+    return finishFail(check, start, 'task-start stdout last line is not JSON', {
+      data: { lastLine: lastLine.slice(0, 200) }
+    });
+  }
+
+  const missing = REQUIRED_DRY_RUN_FIELDS.filter((k) => !(k in json));
+  if (missing.length > 0) {
+    return finishFail(
+      check,
+      start,
+      `${missing.length}/9 field(s) missing: ${missing.join(', ')}`,
+      { data: { missing } }
+    );
+  }
+
+  const elapsed = now() - start;
+  return finishPass(
+    check,
+    start,
+    `9/9 fields present, ${elapsed}ms`
+  );
+}
 
 function parseSemver(text) {
   const match = String(text || '').match(/(\d+)\.(\d+)(?:\.(\d+))?/);
@@ -710,7 +810,7 @@ export const ALL_CHECK_IDS = [
   'c06',
   'c07',
   'c08',
-  // 'c09' — TODO Wave 2
+  'c09',
   'c10',
   'c11',
   'c12'

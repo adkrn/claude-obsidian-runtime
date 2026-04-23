@@ -39,9 +39,15 @@
     "bin",
     "core",
     "commands",
+    "scripts",
     "templates",
     "README.md",
     "MIGRATION_MATRIX.md",
     "PLAN_v2.md"
-  ]
+  ],
+  "scripts": {
+    "build:template-manifest": "node scripts/build-template-manifest.mjs",
+    "prepublishOnly": "node scripts/build-template-manifest.mjs",
+    "test": "node --test"
+  }
 }

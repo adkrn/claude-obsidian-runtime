@@ -1,26 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * Project runtime health diagnostic.
+ * doctor — 12-check runtime health diagnostic (Design-B §1~§5).
  *
- * Usage:
- *   claude-obsidian-runtime doctor [--project-dir <path>] [--full]
+ * Modes:
+ *   (default)  basic: C01..C06 (6 checks)
+ *   --full     full:  C01..C12 (all 12 via core/doctor-checks ALL_CHECK_IDS)
+ *   --eval     spawn eval-run after full pass (Design-C integration)
+ *   --json     machine-readable output (Design-B §5-3)
  *
- * Basic checks (always):
- *   1. CLAUDE_RUNTIME_HOME set and valid
- *   2. .claude/runtime-manifest.json exists and parses
- *   3. .claude/settings.json exists and parses
- *   4. .claude/hooks/ directory exists with expected shell wrappers
- *   5. document/obsidian_context/_meta/obsidian_paths.json exists
- *   6. Package version matches runtime-version.json
- *
- * Full checks (--full):
- *   7. runtime state dirs present and writable
- *   8. code-index/*.jsonl files exist and parse
- *   9. Hook shell wrappers have valid bash syntax (bash -n)
- *  10. Knowledge index (lessons/troubleshooting/decisions) parses and has rows
- *  11. Vault managedRoots are writable
- *  12. Active task pointer references an existing task record
+ * Rollback (§12-4):
+ *   --since-init           : enable post-init rollback flow
+ *   --no-rollback-on-failure : skip rollback prompt (CI mode)
  */
 
 import { spawnSync } from 'child_process';
@@ -28,332 +19,420 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import {
+  ALL_CHECK_IDS,
+  checkRuntimeHome,
+  checkManifestSchema,
+  checkObsidianPaths,
+  checkManagedRoots,
+  checkHookWrappers,
+  checkLeadAgent,
+  checkCodeIndex,
+  checkKnowledgeIndex,
+  checkTaskStartDryRun,
+  checkPrerequisites,
+  checkTemplateIntegrity,
+  checkPerformanceObservability
+} from '../core/doctor-checks.mjs';
+
+import {
+  findLatestBackup,
+  diffAgainstBackup,
+  promptRollback,
+  performRollback
+} from '../core/doctor-rollback.mjs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 
-function parseArgs(argv) {
-  const args = { full: false, json: false };
+const BASIC_CHECK_IDS = ['c01', 'c02', 'c03', 'c04', 'c05', 'c06'];
+
+const CHECK_FN_MAP = {
+  c01: checkRuntimeHome,
+  c02: checkManifestSchema,
+  c03: checkObsidianPaths,
+  c04: checkManagedRoots,
+  c05: checkHookWrappers,
+  c06: checkLeadAgent,
+  c07: checkCodeIndex,
+  c08: checkKnowledgeIndex,
+  c09: checkTaskStartDryRun,
+  c10: checkPrerequisites,
+  c11: checkTemplateIntegrity,
+  c12: checkPerformanceObservability
+};
+
+/**
+ * @typedef {Object} DoctorArgs
+ * @property {string} projectDir
+ * @property {boolean} full
+ * @property {boolean} eval
+ * @property {boolean} json
+ * @property {boolean} noRollback
+ * @property {boolean} sinceInit
+ * @property {boolean} help
+ */
+
+export function parseArgs(argv) {
+  const args = {
+    projectDir: '',
+    full: false,
+    eval: false,
+    json: false,
+    noRollback: false,
+    sinceInit: false,
+    help: false
+  };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--project-dir' && argv[i + 1]) {
-      args.projectDir = argv[i + 1]; i++;
-    } else if (argv[i] === '--full') {
+    const tok = argv[i];
+    if (tok === '--project-dir' && argv[i + 1]) {
+      args.projectDir = argv[i + 1];
+      i++;
+    } else if (tok === '--full') {
       args.full = true;
-    } else if (argv[i] === '--json') {
+    } else if (tok === '--eval') {
+      args.eval = true;
+    } else if (tok === '--json') {
       args.json = true;
+    } else if (tok === '--no-rollback-on-failure') {
+      args.noRollback = true;
+    } else if (tok === '--since-init') {
+      args.sinceInit = true;
+    } else if (tok === '--help' || tok === '-h') {
+      args.help = true;
     }
   }
-  args.projectDir = path.resolve(args.projectDir || process.env.CLAUDE_PROJECT_DIR || process.cwd());
+  args.projectDir = path.resolve(
+    args.projectDir || process.env.CLAUDE_PROJECT_DIR || process.cwd()
+  );
   return args;
 }
 
-function loadJsonSafe(p) {
-  try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
+function printHelp() {
+  process.stdout.write([
+    'Usage: doctor [options]',
+    '',
+    'Options:',
+    '  --project-dir <path>       Project root (default: $CLAUDE_PROJECT_DIR or cwd)',
+    '  --full                     Run all 12 checks (default runs C01..C06)',
+    '  --eval                     After full pass, run eval-run (Design-C)',
+    '  --json                     Machine-readable output (Design-B §5-3)',
+    '  --since-init               Enable post-init rollback flow (§12-4)',
+    '  --no-rollback-on-failure   Skip rollback prompt (CI mode)',
+    '  --help                     Show this help',
+    ''
+  ].join('\n'));
 }
 
 function pkgVersion() {
-  try { return JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')).version; }
-  catch { return 'unknown'; }
+  try {
+    return JSON.parse(
+      fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')
+    ).version;
+  } catch {
+    return 'unknown';
+  }
 }
 
-const EXPECTED_HOOKS = [
-  'runtime-session-start.sh',
-  'runtime-prompt-context.sh',
-  'runtime-subagent-start.sh',
-  'runtime-stop.sh',
-  'runtime-session-end.sh',
-  'runtime-post-edit.sh'
-];
-
-class Check {
-  constructor(name) {
-    this.name = name;
-    this.status = 'pending';
-    this.message = '';
-    this.detail = null;
-  }
-  pass(message, detail) { this.status = 'pass'; this.message = message || 'OK'; this.detail = detail; return this; }
-  warn(message, detail) { this.status = 'warn'; this.message = message; this.detail = detail; return this; }
-  fail(message, detail) { this.status = 'fail'; this.message = message; this.detail = detail; return this; }
+function resolvePackageRoot() {
+  return process.env.CLAUDE_RUNTIME_HOME || PACKAGE_ROOT;
 }
 
-function checkRuntimeHome() {
-  const c = new Check('CLAUDE_RUNTIME_HOME');
-  const home = process.env.CLAUDE_RUNTIME_HOME;
-  if (!home) {
-    return c.warn('Not set. Hooks will fall back to legacy paths.', { remedy: 'export CLAUDE_RUNTIME_HOME=<absolute path to claude-obsidian-runtime>' });
-  }
-  if (!fs.existsSync(home)) {
-    return c.fail(`Directory does not exist: ${home}`, { remedy: 'Check the path or clone claude-obsidian-runtime there.' });
-  }
-  const pkg = path.join(home, 'package.json');
-  if (!fs.existsSync(pkg)) {
-    return c.fail(`No package.json found in ${home}`, { remedy: 'Verify CLAUDE_RUNTIME_HOME points to the package root.' });
-  }
-  return c.pass(`Set to ${home}`);
+function buildContext(args) {
+  return {
+    projectDir: args.projectDir,
+    packageRoot: resolvePackageRoot(),
+    manifest: null,
+    paths: null
+  };
 }
 
-function checkManifest(projectDir) {
-  const c = new Check('runtime-manifest.json');
-  const p = path.join(projectDir, '.claude', 'runtime-manifest.json');
-  if (!fs.existsSync(p)) {
-    return c.warn(`Missing at ${p}`, { remedy: 'Run: claude-obsidian-runtime init --project-id <id>' });
-  }
-  const data = loadJsonSafe(p);
-  if (!data) return c.fail(`Invalid JSON at ${p}`);
-  if (!data.runtimeVersion) return c.warn('Missing runtimeVersion field', { data });
-  return c.pass(`v${data.runtimeVersion}, coreHooks: ${JSON.stringify(data.coreHooks)}`);
-}
-
-function checkSettings(projectDir) {
-  const c = new Check('.claude/settings.json');
-  const p = path.join(projectDir, '.claude', 'settings.json');
-  if (!fs.existsSync(p)) return c.fail(`Missing at ${p}`);
-  const data = loadJsonSafe(p);
-  if (!data) return c.fail(`Invalid JSON at ${p}`);
-  const hookCount = Object.keys(data.hooks || {}).length;
-  return c.pass(`${hookCount} hook event(s) registered`);
-}
-
-function checkHookFiles(projectDir) {
-  const c = new Check('.claude/hooks/ shell wrappers');
-  const dir = path.join(projectDir, '.claude', 'hooks');
-  if (!fs.existsSync(dir)) return c.fail(`Directory missing: ${dir}`);
-  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.sh'));
-  const missing = EXPECTED_HOOKS.filter((h) => !files.includes(h));
-  if (missing.length > 0) {
-    return c.warn(`Missing expected hooks: ${missing.join(', ')}`, { found: files, expected: EXPECTED_HOOKS });
-  }
-  return c.pass(`${files.length} shell wrapper(s) present`, { files });
-}
-
-function checkObsidianPaths(projectDir) {
-  const c = new Check('obsidian_paths.json');
-  const p = path.join(projectDir, 'document', 'obsidian_context', '_meta', 'obsidian_paths.json');
-  if (!fs.existsSync(p)) {
-    return c.warn(`Missing at ${p}`, { remedy: 'Run: claude-obsidian-runtime init' });
-  }
-  const data = loadJsonSafe(p);
-  if (!data) return c.fail(`Invalid JSON at ${p}`);
-  if (!data.vaultRoot) return c.warn('No vaultRoot defined');
-  if (!fs.existsSync(data.vaultRoot)) return c.warn(`vaultRoot does not exist: ${data.vaultRoot}`);
-  return c.pass(`vault: ${data.vaultRoot}, managedRoots: ${(data.managedRoots || []).length}`);
-}
-
-function checkVersion(projectDir) {
-  const c = new Check('runtime-version.json');
-  const p = path.join(projectDir, '.claude', 'runtime', 'runtime-version.json');
-  const pkgV = pkgVersion();
-  if (!fs.existsSync(p)) {
-    return c.warn(`Missing at ${p} (expected after first install-hooks)`, { packageVersion: pkgV });
-  }
-  const data = loadJsonSafe(p);
-  if (!data) return c.fail(`Invalid JSON at ${p}`);
-  if (data.installedVersion !== pkgV) {
-    return c.warn(`Version mismatch: installed ${data.installedVersion}, package ${pkgV}`, { remedy: 'Run: claude-obsidian-runtime upgrade' });
-  }
-  return c.pass(`installedVersion ${data.installedVersion} matches package`);
-}
-
-function checkRuntimeDirs(projectDir) {
-  const c = new Check('runtime state dirs');
-  const root = path.join(projectDir, '.claude', 'runtime');
-  const required = ['tasks', 'events', 'retrieval', 'code-index', 'knowledge'];
-  const missing = required.filter((d) => !fs.existsSync(path.join(root, d)));
-  if (missing.length > 0) {
-    return c.warn(`Missing dirs: ${missing.join(', ')}`, { remedy: 'Will be created on first task-start' });
-  }
-  return c.pass(`All 5 runtime dirs exist`);
-}
-
-function checkCodeIndex(projectDir) {
-  const c = new Check('code-index/*.jsonl');
-  const dir = path.join(projectDir, '.claude', 'runtime', 'code-index');
-  if (!fs.existsSync(dir)) return c.warn('No code-index dir yet');
-  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
-  if (files.length === 0) return c.warn('No index files yet. Run: claude-obsidian-runtime sync');
-  const total = files.reduce((sum, f) => {
-    try { return sum + fs.readFileSync(path.join(dir, f), 'utf8').split('\n').filter(Boolean).length; }
-    catch { return sum; }
-  }, 0);
-  return c.pass(`${files.length} index file(s), ${total} total rows`);
-}
-
-function checkHookSyntax(projectDir) {
-  const c = new Check('hook wrapper syntax (bash -n)');
-  const dir = path.join(projectDir, '.claude', 'hooks');
-  if (!fs.existsSync(dir)) return c.warn('Hooks dir missing, skipped');
-
-  const wrappers = fs.readdirSync(dir).filter((f) => f.endsWith('.sh'));
-  if (wrappers.length === 0) return c.warn('No shell wrappers to check');
-
-  const failures = [];
-  for (const wrapper of wrappers) {
-    const full = path.join(dir, wrapper);
-    const result = spawnSync('bash', ['-n', full], { encoding: 'utf8' });
-    if (result.error) {
-      return c.warn('bash unavailable, skipped syntax check', { remedy: 'Install bash (e.g., Git Bash on Windows)' });
-    }
-    if (result.status !== 0) {
-      failures.push({ file: wrapper, stderr: (result.stderr || '').slice(0, 200) });
-    }
-  }
-  if (failures.length > 0) {
-    return c.fail(`${failures.length} wrapper(s) have syntax errors`, { failures });
-  }
-  return c.pass(`${wrappers.length} wrapper(s) parse cleanly`);
-}
-
-function checkKnowledgeIndex(projectDir) {
-  const c = new Check('knowledge/*.jsonl');
-  const dir = path.join(projectDir, '.claude', 'runtime', 'knowledge');
-  if (!fs.existsSync(dir)) return c.warn('No knowledge dir yet');
-
-  const expected = ['lessons.jsonl', 'troubleshooting.jsonl', 'decisions.jsonl'];
-  const report = {};
-  let malformed = 0;
-  for (const name of expected) {
-    const full = path.join(dir, name);
-    if (!fs.existsSync(full)) { report[name] = 'missing'; continue; }
+/**
+ * Run selected checks sequentially, sharing ctx across calls so that
+ * C02/C03 populate manifest/paths for downstream checks.
+ */
+async function runChecks(checkIds, ctx) {
+  const checks = [];
+  for (const id of checkIds) {
+    const fn = CHECK_FN_MAP[id];
+    if (!fn) continue;
+    let result;
     try {
-      const lines = fs.readFileSync(full, 'utf8').split(/\r?\n/).filter(Boolean);
-      let seeds = 0, parsed = 0;
-      for (const line of lines) {
-        try {
-          const row = JSON.parse(line);
-          parsed += 1;
-          if (String(row.id || '').startsWith('seed:')) seeds += 1;
-        } catch { malformed += 1; }
-      }
-      report[name] = `${parsed} rows (${seeds} seed)`;
+      result = await fn(ctx);
     } catch (err) {
-      report[name] = `read error: ${err.message}`;
+      result = {
+        id,
+        name: id,
+        status: 'fail',
+        message: `check threw: ${err.message}`
+      };
     }
+    checks.push(result);
   }
-
-  if (malformed > 0) {
-    return c.fail(`${malformed} malformed JSONL row(s)`, { report, remedy: 'Run: claude-obsidian-runtime sync to rebuild' });
-  }
-  const allMissing = Object.values(report).every((v) => v === 'missing');
-  if (allMissing) {
-    return c.warn('No knowledge index files yet', { remedy: 'Run: claude-obsidian-runtime sync' });
-  }
-  return c.pass(Object.entries(report).map(([k, v]) => `${k}=${v}`).join(', '));
+  return checks;
 }
 
-function checkVaultWritable(projectDir) {
-  const c = new Check('vault managedRoots writable');
-  const p = path.join(projectDir, 'document', 'obsidian_context', '_meta', 'obsidian_paths.json');
-  const data = loadJsonSafe(p);
-  if (!data) return c.warn('obsidian_paths.json missing/invalid, skipped');
-  if (!data.vaultRoot || !fs.existsSync(data.vaultRoot)) {
-    return c.warn(`vaultRoot not accessible: ${data.vaultRoot}`);
-  }
-  const managed = Array.isArray(data.managedRoots) ? data.managedRoots : [];
-  if (managed.length === 0) return c.warn('No managedRoots configured');
-
-  const missing = [];
-  const unwritable = [];
-  for (const root of managed) {
-    const target = path.isAbsolute(root) ? root : path.join(data.vaultRoot, root);
-    if (!fs.existsSync(target)) { missing.push(root); continue; }
-    try {
-      const probe = path.join(target, `.doctor-write-${Date.now()}.tmp`);
-      fs.writeFileSync(probe, 'probe');
-      fs.unlinkSync(probe);
-    } catch (err) {
-      unwritable.push({ root, reason: err.code || err.message });
-    }
-  }
-  if (unwritable.length > 0) {
-    return c.fail(`${unwritable.length} managed root(s) not writable`, { unwritable, missing });
-  }
-  if (missing.length > 0) {
-    return c.warn(`${missing.length} managed root(s) not created yet`, { missing, remedy: 'Will be created on first write via writeVaultArtifact' });
-  }
-  return c.pass(`${managed.length} managed root(s) writable`);
-}
-
-function checkActiveTaskPointer(projectDir) {
-  const c = new Check('active task pointer integrity');
-  const pointerPath = path.join(projectDir, '.claude', 'runtime', 'tasks', 'current.json');
-  if (!fs.existsSync(pointerPath)) return c.pass('No active task (clean state)');
-
-  const pointer = loadJsonSafe(pointerPath);
-  if (!pointer) return c.fail(`Invalid JSON at ${pointerPath}`);
-
-  const taskId = pointer.taskId;
-  if (!taskId) return c.warn('Pointer has no taskId field');
-
-  const taskPath = pointer.taskPath
-    ? (path.isAbsolute(pointer.taskPath) ? pointer.taskPath : path.join(projectDir, pointer.taskPath))
-    : path.join(projectDir, '.claude', 'runtime', 'tasks', `${taskId}.json`);
-
-  if (!fs.existsSync(taskPath)) {
-    return c.fail(`Pointer references missing task: ${taskId}`, { remedy: 'Delete tasks/current.json or run task-close' });
-  }
-
-  const task = loadJsonSafe(taskPath);
-  if (!task) return c.fail(`Task record is invalid JSON: ${taskPath}`);
-  return c.pass(`Active task ${taskId} :: ${task.title || task.prompt || '(no title)'}`);
-}
-
-function printReport(checks) {
-  const icons = { pass: '[OK]', warn: '[WARN]', fail: '[FAIL]', pending: '[...]' };
-  let hasFail = false;
-  for (const c of checks) {
-    if (c.status === 'fail') hasFail = true;
-    console.log(`${icons[c.status].padEnd(7)} ${c.name.padEnd(35)} ${c.message}`);
-    if (c.detail?.remedy) console.log(`        -> ${c.detail.remedy}`);
-  }
+function countStatuses(checks) {
   const counts = { pass: 0, warn: 0, fail: 0 };
-  for (const c of checks) counts[c.status]++;
-  console.log('');
-  console.log(`Summary: ${counts.pass} pass, ${counts.warn} warn, ${counts.fail} fail`);
-  return hasFail ? 1 : 0;
+  for (const c of checks) {
+    if (counts[c.status] !== undefined) counts[c.status] += 1;
+  }
+  return counts;
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
+function statusIcon(status) {
+  return {
+    pass: '[OK]',
+    warn: '[WARN]',
+    fail: '[FAIL]',
+    pending: '[...]'
+  }[status] || '[?]';
+}
 
-  const checks = [
-    checkRuntimeHome(),
-    checkManifest(args.projectDir),
-    checkSettings(args.projectDir),
-    checkHookFiles(args.projectDir),
-    checkObsidianPaths(args.projectDir),
-    checkVersion(args.projectDir)
-  ];
+/**
+ * Design-B §5-1/§5-2: human-readable report. Returns exit code.
+ */
+function printReportText(checks, args, elapsedMs) {
+  const counts = countStatuses(checks);
+  const mode = args.full ? 'full' : 'basic';
+  const suffix = args.sinceInit ? ' (--since-init)' : '';
 
-  if (args.full) {
-    checks.push(checkRuntimeDirs(args.projectDir));
-    checks.push(checkCodeIndex(args.projectDir));
-    checks.push(checkHookSyntax(args.projectDir));
-    checks.push(checkKnowledgeIndex(args.projectDir));
-    checks.push(checkVaultWritable(args.projectDir));
-    checks.push(checkActiveTaskPointer(args.projectDir));
-  }
-
-  if (args.json) {
-    const counts = { pass: 0, warn: 0, fail: 0 };
-    for (const c of checks) counts[c.status]++;
-    process.stdout.write(JSON.stringify({
-      package: pkgVersion(),
-      projectDir: args.projectDir,
-      mode: args.full ? 'full' : 'basic',
-      counts,
-      checks: checks.map((c) => ({ name: c.name, status: c.status, message: c.message, detail: c.detail }))
-    }, null, 2) + '\n');
-    process.exit(counts.fail > 0 ? 1 : 0);
-  }
-
-  console.log(`claude-obsidian-runtime doctor`);
+  console.log('claude-obsidian-runtime doctor');
   console.log(`Package:     v${pkgVersion()}`);
   console.log(`Project:     ${args.projectDir}`);
-  console.log(`Mode:        ${args.full ? 'full' : 'basic'}`);
+  console.log(`Mode:        ${mode}${suffix}`);
   console.log('');
-  const exitCode = printReport(checks);
-  process.exit(exitCode);
+
+  for (const c of checks) {
+    const id = (c.id || '').toUpperCase().padEnd(4);
+    const icon = statusIcon(c.status).padEnd(7);
+    const name = (c.name || '').padEnd(38);
+    console.log(`${icon} ${id} ${name} ${c.message}`);
+    if (c.detail?.remedy) {
+      console.log(`        -> ${c.detail.remedy}`);
+    }
+  }
+  console.log('');
+  const elapsedSec = (elapsedMs / 1000).toFixed(1);
+  console.log(
+    `Summary: ${counts.pass} pass, ${counts.warn} warn, ${counts.fail} fail   (elapsed: ${elapsedSec}s)`
+  );
+  return counts.fail > 0 ? 1 : 0;
 }
 
-main();
+/**
+ * Design-B §5-3: JSON output.
+ */
+function printReportJson(checks, args, elapsedMs, rollbackInfo) {
+  const counts = countStatuses(checks);
+  const payload = {
+    package: pkgVersion(),
+    projectDir: args.projectDir,
+    mode: args.full ? 'full' : 'basic',
+    sinceInit: args.sinceInit,
+    counts,
+    elapsedMs,
+    checks: checks.map((c) => ({
+      id: c.id,
+      name: c.name,
+      status: c.status,
+      message: c.message,
+      detail: c.detail,
+      elapsedMs: c.elapsedMs
+    }))
+  };
+  if (rollbackInfo) payload.rollback = rollbackInfo;
+  process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
+  return counts.fail > 0 ? 1 : 0;
+}
+
+/**
+ * Design-B §5-2, §12-4: rollback flow.
+ * Returns { handled: boolean, exitCode?: number, info?: object }.
+ */
+async function maybeRollback(args, checks) {
+  const failCount = checks.filter((c) => c.status === 'fail').length;
+  if (failCount === 0) return { handled: false };
+  if (!args.sinceInit) return { handled: false };
+
+  const backupDir = findLatestBackup(args.projectDir);
+  if (!backupDir) {
+    return {
+      handled: false,
+      info: {
+        available: false,
+        performed: false,
+        reason: 'no backup found'
+      }
+    };
+  }
+
+  // CI mode / non-interactive — skip prompt.
+  if (args.noRollback || args.json || !process.stdin.isTTY) {
+    return {
+      handled: false,
+      info: {
+        available: true,
+        backupDir,
+        performed: false,
+        reason: args.noRollback
+          ? '--no-rollback-on-failure'
+          : args.json
+          ? '--json (non-interactive)'
+          : 'non-TTY'
+      }
+    };
+  }
+
+  const diff = diffAgainstBackup(args.projectDir, backupDir);
+  console.log('');
+  console.log('---');
+  console.log(`${failCount} check(s) failed during post-init validation.`);
+  console.log('Automatic rollback available:');
+  console.log(`  Backup: ${path.basename(backupDir)}/`);
+  if (diff.length > 0) {
+    console.log('  Changes to restore:');
+    for (const line of diff.slice(0, 10)) {
+      console.log(`    ${line.status} ${line.path}`);
+    }
+    if (diff.length > 10) {
+      console.log(`    ... (${diff.length - 10} more)`);
+    }
+  }
+  console.log('');
+
+  const choice = await promptRollback(diff);
+  if (choice !== 'rollback') {
+    return {
+      handled: true,
+      exitCode: 1,
+      info: {
+        available: true,
+        backupDir,
+        performed: false,
+        reason: 'user declined'
+      }
+    };
+  }
+
+  const outcome = await performRollback({
+    projectDir: args.projectDir,
+    backupDir,
+    failures: checks.filter((c) => c.status === 'fail')
+  });
+  console.log('');
+  console.log(
+    `Rollback complete: ${outcome.restored.length} restored, ${outcome.partial.length} partial.`
+  );
+  if (outcome.partial.length > 0 && outcome.logPath) {
+    console.log(`  Partial log: ${outcome.logPath}`);
+  }
+  return {
+    handled: true,
+    exitCode: 2,
+    info: {
+      available: true,
+      backupDir,
+      performed: true,
+      restored: outcome.restored.length,
+      partial: outcome.partial.length
+    }
+  };
+}
+
+/**
+ * Design-B §5-4: --eval spawns commands/eval-run.mjs after full pass.
+ */
+function runEvalMode(args, checks) {
+  const counts = countStatuses(checks);
+  if (counts.fail > 0) {
+    console.log('');
+    console.log('Cannot run eval with failed checks. Eval skipped.');
+    return 1;
+  }
+
+  const evalRunPath = path.join(resolvePackageRoot(), 'commands', 'eval-run.mjs');
+  if (!fs.existsSync(evalRunPath)) {
+    console.log('');
+    console.log(`Eval report: (skipped — Design-C not yet integrated at ${evalRunPath})`);
+    return counts.fail > 0 ? 1 : 0;
+  }
+
+  const result = spawnSync(
+    process.execPath,
+    [evalRunPath, '--golden', '--all', '--project-dir', args.projectDir],
+    { encoding: 'utf8' }
+  );
+
+  if (result.error) {
+    console.log('');
+    console.log(`Eval report: (spawn failed: ${result.error.message})`);
+    return 1;
+  }
+
+  const stdout = String(result.stdout || '');
+  if (stdout) process.stdout.write(stdout);
+  const stderr = String(result.stderr || '');
+  if (stderr) process.stderr.write(stderr);
+
+  const reportLine = stdout
+    .split(/\r?\n/)
+    .reverse()
+    .find((line) => line.startsWith('REPORT='));
+  const reportPath = reportLine ? reportLine.slice('REPORT='.length).trim() : '';
+  console.log('');
+  if (reportPath) {
+    console.log(`Eval report: ${reportPath}`);
+  } else {
+    console.log('Eval report: (no REPORT= line in eval-run stdout)');
+  }
+
+  return result.status ?? 1;
+}
+
+export async function main(argv) {
+  const args = parseArgs(argv);
+  if (args.help) {
+    printHelp();
+    return 0;
+  }
+
+  const started = Date.now();
+  const ctx = buildContext(args);
+  const checkIds = args.full ? ALL_CHECK_IDS : BASIC_CHECK_IDS;
+  const checks = await runChecks(checkIds, ctx);
+  const elapsedMs = Date.now() - started;
+
+  // JSON mode: skip rollback prompt entirely, emit machine-readable report.
+  if (args.json) {
+    const rb = await maybeRollback(args, checks);
+    const exitCode = printReportJson(checks, args, elapsedMs, rb.info);
+    return rb.handled && typeof rb.exitCode === 'number' ? rb.exitCode : exitCode;
+  }
+
+  let exitCode = printReportText(checks, args, elapsedMs);
+
+  // --eval takes precedence over rollback when all checks pass.
+  if (args.eval && args.full) {
+    const evalExit = runEvalMode(args, checks);
+    if (typeof evalExit === 'number') exitCode = evalExit;
+    return exitCode;
+  }
+
+  const rb = await maybeRollback(args, checks);
+  if (rb.handled && typeof rb.exitCode === 'number') {
+    return rb.exitCode;
+  }
+  return exitCode;
+}
+
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+if (__filename === invokedPath) {
+  main(process.argv.slice(2))
+    .then((code) => process.exit(code ?? 0))
+    .catch((err) => {
+      console.error(`[doctor] ${err.message}`);
+      process.exit(1);
+    });
+}

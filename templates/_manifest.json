@@ -1,0 +1,123 @@
+{
+  "schemaVersion": "1.0.0",
+  "packageVersion": "3.0.0",
+  "generatedAt": "2026-04-23T05:07:56.654Z",
+  "generator": "scripts/build-template-manifest.mjs",
+  "files": [
+    {
+      "relPath": "commands/architecture-promote.md",
+      "sha256": "c53074203d6af4f6e8ccd80f8a2290a05d3a7e726980c93bf2a55e424f5674c1",
+      "size": 605,
+      "required": false
+    },
+    {
+      "relPath": "commands/memory-refresh.md",
+      "sha256": "d15daefeade7de5232c32de8adc983fe4d9cc3216b58355913aa57e6d50448ed",
+      "size": 402,
+      "required": false
+    },
+    {
+      "relPath": "commands/obsidian-health.md",
+      "sha256": "16cf27a8af3f5c269fb530b7ff8db32bf23c6269c4ec9e053138f7db4a52221c",
+      "size": 523,
+      "required": false
+    },
+    {
+      "relPath": "commands/obsidian-sync.md",
+      "sha256": "1aa98cacf86a4d105c6c294d575a098eac8f3b415b4cc111b8b9e6afb2767e5a",
+      "size": 532,
+      "required": false
+    },
+    {
+      "relPath": "commands/task-close.md",
+      "sha256": "9fba07bb317aabf4520de69cd44b134628d345a5feb13ea7ebcc11914a7a56c4",
+      "size": 708,
+      "required": false
+    },
+    {
+      "relPath": "commands/task-start.md",
+      "sha256": "ed365fd82f809128559ae1f74f338387c4ac70eba97ce86a470c6a17b93ee536",
+      "size": 1093,
+      "required": false
+    },
+    {
+      "relPath": "context_routes.json",
+      "sha256": "4375e1462a5fb6aa0e8426eaa86bddbbeac4594933d15c85b30553ab250992be",
+      "size": 615,
+      "required": true
+    },
+    {
+      "relPath": "eval/golden-tasks.json",
+      "sha256": "2feb2b369b038d80110b362101ea8b1c6470a0b068f02be4c94a3a4b0bc85f6f",
+      "size": 6148,
+      "required": true
+    },
+    {
+      "relPath": "hooks/runtime-post-edit.sh",
+      "sha256": "16147c0ed3c23ca03c396630a8b4e8adebba16fe9a587ebc9dee711367f39725",
+      "size": 270,
+      "required": true
+    },
+    {
+      "relPath": "hooks/runtime-prompt-context.sh",
+      "sha256": "42f69787f21382c3014e247cab411c3c4e4e39fd6a554d82a13b81f7e13cfe5f",
+      "size": 236,
+      "required": true
+    },
+    {
+      "relPath": "hooks/runtime-session-end.sh",
+      "sha256": "4afffec29d5fd954ba82be4646f4d9b2145103ca9a356589006db6260abeb727",
+      "size": 270,
+      "required": true
+    },
+    {
+      "relPath": "hooks/runtime-session-start.sh",
+      "sha256": "c9d4bacf9a75bd2050b29fb715808efcd46d842bce8c7eb53e54c3a60601dd7b",
+      "size": 235,
+      "required": true
+    },
+    {
+      "relPath": "hooks/runtime-stop.sh",
+      "sha256": "504074a76b9bf900a4f77ee4e6b12f99c24578c9094426366a34212300eca6e9",
+      "size": 263,
+      "required": true
+    },
+    {
+      "relPath": "hooks/runtime-subagent-start.sh",
+      "sha256": "bc7859933f881c633e792933f99ce9449c376166b9f18c2809ab12e1d8f0d9b7",
+      "size": 236,
+      "required": true
+    },
+    {
+      "relPath": "obsidian_paths.json",
+      "sha256": "c9f97de9087d843fac54772df0dfb83f6c91b9c7cd21a34f2ec6e7e7128c094e",
+      "size": 536,
+      "required": true
+    },
+    {
+      "relPath": "runtime-manifest.json",
+      "sha256": "89189676f69b134ae7d2b02af183bdf56f6038d16a5355223df1933ccca14909",
+      "size": 282,
+      "required": true
+    },
+    {
+      "relPath": "vault/00_Home/_Index.md",
+      "sha256": "052bd9c4ebdd66af9ca1041a257cb908593cd6fdd3b8f1f096546d39300441b5",
+      "size": 855,
+      "required": true
+    },
+    {
+      "relPath": "vault/00_Home/Current_Focus.md",
+      "sha256": "271c9fc3e24ecb5ed4f81d75bac447cc34cdfc2499d955c24f3e67604a5a69b6",
+      "size": 267,
+      "required": true
+    },
+    {
+      "relPath": "vault/00_Home/Reading_Order.md",
+      "sha256": "25691650b8b4a8e075b47a4b0a6f4372e6d5615f79fe1d11aa16ba0c6bd23460",
+      "size": 357,
+      "required": true
+    }
+  ],
+  "rootFingerprint": "38c444a656dadcaba92cdcc1991a609704764f9f0ef14e498b3bfebfed74999b"
+}
