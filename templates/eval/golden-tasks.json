@@ -180,6 +180,186 @@
         "07_Decisions/Drafts/_index.md": 1,
         "06_Troubleshooting/Backend/_index.md": 0
       }
+    },
+    {
+      "id": "GOLDEN-11",
+      "category": "pm_trigger",
+      "prompt": "프로젝트 유형 설정 필요",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["projectKinds", "runtime-manifest", "lead"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 0
+      }
+    },
+    {
+      "id": "GOLDEN-12",
+      "category": "pm_termination",
+      "prompt": "이미 유형이 설정된 프로젝트 계속 작업",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["projectKinds"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "10_Worklogs/Auto/_latest.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-13",
+      "category": "fanout_cap",
+      "prompt": "리팩토링 테스트 보안점검 성능프로파일링 동시 위임",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "04_Architecture/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["fanout", "delegate", "agent", "cap"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "04_Architecture/_index.md": 1,
+        "08_Lessons/Drafts/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-14",
+      "category": "backward_compat",
+      "prompt": "기존 프로젝트 manifest 로드 호환성",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["runtime-manifest", "manifest", "projectKinds", "fallback"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-15",
+      "category": "hybrid_kind",
+      "prompt": "웹과 라이브러리 성격을 겸하는 프로젝트 유형 응답",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["projectKinds", "web", "library", "hybrid"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "09_Templates/Feature_Spec.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-16",
+      "category": "agents_bootstrap_web",
+      "prompt": "agents-bootstrap 웹 유형 설치",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["agents-bootstrap", "agents", "recommended", "web"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-17",
+      "category": "agents_bootstrap_interactive",
+      "prompt": "에이전트 설치 대화형 모드",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["agents-bootstrap", "projectKinds", "recommended"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-18",
+      "category": "agents_bootstrap_duplicate",
+      "prompt": "이미 설치된 에이전트 중복 설치 감지",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["agents", "skip", "agents-bootstrap", "existing"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "10_Worklogs/Auto/_latest.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-19",
+      "category": "agents_bootstrap_flag_mismatch",
+      "prompt": "플래그와 manifest 유형 불일치 처리",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["projectKinds", "kind", "agents-bootstrap", "flag"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-20",
+      "category": "capability_routing_trigger_match",
+      "prompt": "리액트 컴포넌트 tsx styling 리뷰",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "04_Architecture/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["component", "tsx", "styling", "triggers", "frontend"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "04_Architecture/_index.md": 1,
+        "08_Lessons/Drafts/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-21",
+      "category": "capability_routing_tie_break",
+      "prompt": "테스트 작성과 문서 동시 요청",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "04_Architecture/_index.md"
+      ],
+      "expectedCodeHitsKeywords": ["test", "docs", "triggers", "tie-break"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "04_Architecture/_index.md": 1,
+        "09_Templates/Test_Template.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-22",
+      "category": "capability_routing_grandfathered",
+      "prompt": "lead 에이전트가 triggers 없이 라우팅 참여 금지 확인",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["triggers", "grandfathered", "lead", "routing"],
+      "reusability": "low",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
     }
   ]
 }

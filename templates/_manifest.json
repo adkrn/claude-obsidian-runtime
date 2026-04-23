@@ -1,14 +1,56 @@
 {
   "schemaVersion": "1.0.0",
   "packageVersion": "3.0.0",
-  "generatedAt": "2026-04-23T11:46:58.821Z",
+  "generatedAt": "2026-04-23T11:57:31.733Z",
   "generator": "scripts/build-template-manifest.mjs",
   "files": [
     {
       "relPath": "agents/_lead.md",
-      "sha256": "beb7cd5afd458500a0e4ef7ac5d8076aed1a303ee82b502f336fe79a0e3a2d78",
-      "size": 5338,
+      "sha256": "e501f51451f7140fdf1a4464273f1129a28be0de89ccbe18403363c7c644a9af",
+      "size": 6753,
       "required": true
+    },
+    {
+      "relPath": "agents/_recommended/_common/test-writer.md",
+      "sha256": "67d5586e51d422c33912054bf2f934e3707653e704272345a8c920f556b0a594",
+      "size": 2899,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/cli/cli-designer.md",
+      "sha256": "5472db9b671f5f7092fc50ad039d37b70427ee023c6d6715e1fa9518e17b13db",
+      "size": 2629,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/cli/docs-writer.md",
+      "sha256": "8bd6e930e01dd571560da19b909f48c9686fc914821b44dd0e24094b04a8295d",
+      "size": 2079,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/web/api-designer.md",
+      "sha256": "040c1d1a777fc86007fff406c1643c04f90a7d308f1f2d91440558e5602ec0ef",
+      "size": 2628,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/web/docs-writer.md",
+      "sha256": "55fc28e120329fbd3ed5c2c01daae34b1c88b17e6a7b574a02f4b5e56aae9046",
+      "size": 2224,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/web/frontend-reviewer.md",
+      "sha256": "195d5ceba66bc83a94508d50ecec2cb0264c0846d4107e248b7c922652c8fb3d",
+      "size": 3121,
+      "required": false
+    },
+    {
+      "relPath": "commands/agents-bootstrap.md",
+      "sha256": "1ba668b37130d1528ff07694eaa2086d2f58e16b85301c604ecc289db48f1f9c",
+      "size": 5462,
+      "required": false
     },
     {
       "relPath": "commands/architecture-promote.md",
@@ -54,8 +96,8 @@
     },
     {
       "relPath": "eval/golden-tasks.json",
-      "sha256": "2feb2b369b038d80110b362101ea8b1c6470a0b068f02be4c94a3a4b0bc85f6f",
-      "size": 6148,
+      "sha256": "8945ccee09094cc0af327a6888c0b28dab4d1ed3a99e058a7a1254092121bba6",
+      "size": 12167,
       "required": true
     },
     {
@@ -125,5 +167,5 @@
       "required": true
     }
   ],
-  "rootFingerprint": "4478bf30689bb719b3b43934c4daa3b477f84778269006c5167975c2584f6f16"
+  "rootFingerprint": "e3573526878cf23f517aaa583cffed63968f44237a9ca74e58cc0a442b9cfa73"
 }
