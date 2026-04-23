@@ -22,5 +22,18 @@
   "promotion": {
     "confidenceThreshold": 0.75,
     "reuseCount": 2
+  },
+  "governance": {
+    "enabled": false,
+    "retentionDays": 180,
+    "maxReasonLength": 100,
+    "loopDetection": {
+      "window_minutes": 5,
+      "threshold": 3
+    },
+    "rotation": {
+      "strategy": "monthly",
+      "maxFileBytes": 104857600
+    }
   }
 }

@@ -360,6 +360,126 @@
         "00_Home/Current_Focus.md": 1,
         "04_Architecture/_index.md": 1
       }
+    },
+    {
+      "id": "GOLDEN-23",
+      "category": "governance_delegation_record",
+      "prompt": "위임 기록 delegations.jsonl 확인",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["delegation", "delegations.jsonl", "governance", "caller"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "10_Worklogs/Auto/_latest.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-24",
+      "category": "governance_loop_detection",
+      "prompt": "같은 에이전트에 반복 위임 루프 감지",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["loop", "detection", "delegation", "threshold"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-25",
+      "category": "governance_fanout_cap_rejected",
+      "prompt": "fanout cap 초과로 위임 거부 이벤트",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["cap_rejected", "fanout", "agentFanoutCap", "delegation"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-26",
+      "category": "data_kind_install",
+      "prompt": "data kind 에이전트 설치 스키마 리뷰",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["schema", "migration", "data", "agents-bootstrap"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-27",
+      "category": "library_kind_install",
+      "prompt": "library kind 에이전트 설치 semver CHANGELOG",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["semver", "changelog", "library", "agents-bootstrap"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-28",
+      "category": "maker_checker_flow",
+      "prompt": "lead checker 가 draft 검토 후 승격 제안",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["maker", "checker", "draft", "promotion", "lead"],
+      "reusability": "high",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "08_Lessons/Drafts/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-29",
+      "category": "context_agent_scope_filter",
+      "prompt": "에이전트별 context scope 필터링 동작 확인",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["agentScope", "context_routes", "groups", "filter"],
+      "reusability": "medium",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
+    },
+    {
+      "id": "GOLDEN-30",
+      "category": "governance_retention_rotation",
+      "prompt": "delegations 파일 월별 로테이션 180일 보관",
+      "expectedScope": "<defaultScope>",
+      "expectedReadFirstPaths": [
+        "00_Home/Current_Focus.md"
+      ],
+      "expectedCodeHitsKeywords": ["retention", "rotation", "delegations", "monthly"],
+      "reusability": "low",
+      "manualRelevanceScores": {
+        "00_Home/Current_Focus.md": 1,
+        "04_Architecture/_index.md": 1
+      }
     }
   ]
 }

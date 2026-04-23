@@ -26,6 +26,18 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 - **lesson 품질 점검**: learning-curate가 생성한 lesson draft의 `trigger_keywords` / `applicable_when`
   필드가 비어있으면 채우라는 경고 출력
 
+## Maker-Checker 역할 분리 (P2, 기획서 §R2-1)
+- **Maker (subagent)**: `.claude/agents/{{PROJECT_ID}}-*.md` 의 모든 비-lead 에이전트. draft lesson / decision / troubleshooting 을 `08_Lessons/Drafts/` · `07_Decisions/Drafts/` · `06_Troubleshooting/*/Drafts/` 에 생성.
+- **Checker (lead, 본인)**: subagent 의 draft 를 승격 전 아래 항목을 **검토** 한다.
+  - Zettelkasten 스키마 11필드 완결성 (특히 `trigger_keywords` / `applicable_when`).
+  - `confidence` 값 (기본 0.6, 승격 임계값 `runtime-manifest.json.promotion.confidenceThreshold` 기본 0.75).
+  - `relatedFiles` 실제 존재 여부.
+  - `reason`/근거가 사실에 부합하고 PII/secret 미포함.
+- **승격 경로**: lead 가 **사용자에게 `/architecture-promote` 제안** (기존 능동 큐레이터 역할과 동일). 사용자 승인 후에만 Drafts/ → 정식 경로.
+- **Checker 거부 시 재작업 사이클**: lead 가 draft 를 부족하다고 판단하면 해당 subagent 에게 **같은 task 내 재작업 위임** (재귀 깊이 1 유지). 재위임 시 delegation 이벤트는 `outcome: "bounced"` 로 기록 (§1-1 스키마).
+- **lead 부재 시나리오**: 사용자가 특정 subagent 를 **직접** 호출해 작업시키는 경우 (lead 경유 X), subagent 는 여전히 Drafts/ 에만 쓰고 Checker 승격은 다음 lead 세션에서 처리. subagent 가 자체 승격 시도 금지.
+- **범위 제한**: Maker-Checker 는 4-channel writeback **스키마를 변경하지 않는다**. lesson/decision/troubleshooting 각 Drafts 경로와 Zettelkasten 11필드는 P0 이전 그대로.
+
 ## 4-channel writeback 경계
 - Decision은 `07_Decisions/Drafts/`에만 기록 (사람 승격 필요)
 - Lesson은 `08_Lessons/Drafts/`에만 기록 (§1-6 Zettelkasten 스키마 준수)
@@ -79,9 +91,21 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Agent
   - `score == 0` 일 때 lead 본인 처리.
   - lead → `*-lead` 호출 금지 (기존 MUST NOT 유지).
   - `triggers` 없는 agent (grandfathered) 는 위임 대상에서 자연 제외 — 강제로 불러오지 않는다.
+  - **위임 발생 시 `.claude/runtime/delegations-YYYY-MM.jsonl` 에 한 줄 append** 한다. 포맷은 design-p2 §1-1 스키마(`ts`/`type`/`caller`/`callee`/`task_id`/`reason`/`outcome` 필수) 준수. `runtime-manifest.json.governance.enabled` 가 `true` 일 때만 기록 — 기본값 `false` 에선 skip (opt-in).
+  - **`reason` 은 100자 이내 요약문만**. 대화 본문·파일 내용·시크릿(`sk-*`, `AKIA*`, `ghp_*`, `xox[baprs]-*`, 프라이빗 키) 기록 금지. 시크릿 패턴 탐지 시 해당 이벤트 **쓰기 거부**.
 
-- **P2 예정**: 위임 발생 시 `delegations.jsonl` 에 기록 (Governance Layer). 본 P1 은 로깅 없음.
+- **Governance 연계**: 루프 감지(`loopDetection.window_minutes:5` 내 같은 `caller→callee` pair 가 `threshold:3` 이상)는 lead 가 본인의 과거 delegation 기록을 읽어 판단. 감지 시 그 회 위임의 `outcome` 을 `"loop_rejected"` 로 기록하고 사용자에게 "루프 감지 — 다른 접근 권장" 안내.
 - **관찰**: agent 수가 10개를 넘어가면 매칭 비용이 증가 — P3 Routing 평가 지표에서 측정 예정.
+
+## Context Scope 필터 (P2, 기획서 §R2-2)
+- **목적**: 같은 vault 안에서도 에이전트마다 개인화된 readFirst 산출 — `context_routes.json.groups[].agentScope` 필드 활용.
+- **해석 규약**:
+  - `agentScope` 미존재 또는 빈 배열 → 모든 에이전트 허용 (grandfathered, backward compat).
+  - `agentScope: ["*"]` → 명시적 wildcard, 모든 에이전트 허용.
+  - `agentScope: [...에이전트 이름 배열]` → 해당 배열에 포함된 에이전트만 이 그룹의 notes 를 readFirst 에 포함. 나머지 에이전트에게는 이 그룹 notes 가 **보이지 않음**.
+- **ID 매칭**: 에이전트 `name` 의 `{{PROJECT_ID}}-` prefix 제거 후 접미사(`frontend-reviewer`) 또는 전체 이름(`{{PROJECT_ID}}-frontend-reviewer`) 둘 다 매칭. lead 본인은 `"lead"` 로 매칭.
+- **적용 시점**: lead 가 subagent 에게 위임할 때, subagent 가 받을 컨텍스트를 조립하는 단계에서 이 필터를 적용. resolver 는 건드리지 않음 — lead 가 `matchedGroups` 결과를 사후 필터링.
+- **MUST NOT**: `context_routes.json` 의 `always` 섹션에는 `agentScope` 를 적용하지 않는다 (프로젝트 전체 공통 문서는 모든 에이전트가 봐야 함).
 
 ## MUST NOT
 - `$CLAUDE_RUNTIME_HOME/core/ + commands/` 수정 금지 (shared 주권)

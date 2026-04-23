@@ -27,6 +27,7 @@ import {
 } from './runtime-lib.mjs';
 import { loadObsidianConfig } from './obsidian-config.mjs';
 import { normalizePath } from './utils.mjs';
+import { validateDelegationEvent } from './delegation-schema.mjs';
 
 // ── Defaults ───────────────────────────────────────────────────────
 
@@ -521,6 +522,61 @@ export function captureFileRead(projectDir, options = {}) {
   appendJsonl(getEventFilePath(projectDir, new Date(payload.ts)), payload);
 
   return { ok: true, event: payload };
+}
+
+// ── Delegation public API (P2 Governance Layer) ────────────────────
+
+function getDelegationFilePath(projectDir, date = new Date()) {
+  const { runtimeRoot } = getRuntimePaths(projectDir);
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return path.join(runtimeRoot, `delegations-${yyyy}-${mm}.jsonl`);
+}
+
+/**
+ * Capture a delegation event (P2 Governance Layer, per design-p2 §1-1).
+ *
+ * Independent of captureLearningEvent: writes to a dedicated delegations
+ * file, does not touch events/*.jsonl, does not update the active task
+ * record.  Validation delegated to delegation-schema.mjs.
+ *
+ * @param {string} projectDir
+ * @param {object} options
+ *   - caller, callee, task_id, reason, outcome: required
+ *   - tokens_estimate, duration_ms, correlation_id, fanout_index: optional
+ * @returns {{ ok: boolean, event?: object, reason?: string, errors?: string[] }}
+ */
+export function captureDelegation(projectDir, options = {}) {
+  const event = {
+    ts: new Date().toISOString(),
+    type: 'delegation',
+    caller: String(options.caller || '').trim(),
+    callee: String(options.callee || '').trim(),
+    task_id: String(options.task_id || '').trim(),
+    reason: String(options.reason || '').trim().slice(0, 100),
+    outcome: String(options.outcome || '').trim()
+  };
+
+  if (options.tokens_estimate !== undefined && options.tokens_estimate !== null) {
+    event.tokens_estimate = Number(options.tokens_estimate);
+  }
+  if (options.duration_ms !== undefined && options.duration_ms !== null) {
+    event.duration_ms = Number(options.duration_ms);
+  }
+  if (options.correlation_id) {
+    event.correlation_id = String(options.correlation_id).trim();
+  }
+  if (options.fanout_index !== undefined && options.fanout_index !== null) {
+    event.fanout_index = Number(options.fanout_index);
+  }
+
+  const result = validateDelegationEvent(event);
+  if (!result.valid) {
+    return { ok: false, reason: 'invalid_event', errors: result.errors };
+  }
+
+  appendJsonl(getDelegationFilePath(projectDir, new Date(event.ts)), event);
+  return { ok: true, event };
 }
 
 // ── CLI entry point (when invoked directly) ────────────────────────

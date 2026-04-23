@@ -1,13 +1,13 @@
 {
   "schemaVersion": "1.0.0",
   "packageVersion": "3.0.0",
-  "generatedAt": "2026-04-23T11:57:31.733Z",
+  "generatedAt": "2026-04-23T12:07:32.316Z",
   "generator": "scripts/build-template-manifest.mjs",
   "files": [
     {
       "relPath": "agents/_lead.md",
-      "sha256": "e501f51451f7140fdf1a4464273f1129a28be0de89ccbe18403363c7c644a9af",
-      "size": 6753,
+      "sha256": "aabc75e2536bdf519901ae1a427011d917737aba3bcae0a6385cad72e18c1241",
+      "size": 10412,
       "required": true
     },
     {
@@ -26,6 +26,42 @@
       "relPath": "agents/_recommended/cli/docs-writer.md",
       "sha256": "8bd6e930e01dd571560da19b909f48c9686fc914821b44dd0e24094b04a8295d",
       "size": 2079,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/data/data-schema-reviewer.md",
+      "sha256": "0b6fcc7433983eab388790212b747291be87b879e5f37691b717730b7a694663",
+      "size": 3309,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/data/migration-writer.md",
+      "sha256": "f1c3fdc1b70c79754d06d95aaedc2517b8255126e32548f9841bddaff31347c4",
+      "size": 3536,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/data/query-optimizer.md",
+      "sha256": "0160e224f29ed7eb243ce07f77e66cb1618e7f98dec82ad1ebfb04482f748bb9",
+      "size": 3090,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/library/api-designer.md",
+      "sha256": "f6979a2018bf5810f03e9dbca18fa4b24cf75b928999ad83958e2d9905224957",
+      "size": 3477,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/library/docs-writer.md",
+      "sha256": "1f17f387d09fbcc7d094ac6e5a11a8d2f750ab06b1ab8d1452f40091deb7af35",
+      "size": 3060,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/library/semver-auditor.md",
+      "sha256": "9ae9a53d6a7f9f5bfaf306130ca71159186a2d8037733cdf94c812e6518d3a2f",
+      "size": 3035,
       "required": false
     },
     {
@@ -96,8 +132,8 @@
     },
     {
       "relPath": "eval/golden-tasks.json",
-      "sha256": "8945ccee09094cc0af327a6888c0b28dab4d1ed3a99e058a7a1254092121bba6",
-      "size": 12167,
+      "sha256": "92e3219318624f11a00f9124523dd512ee504eecff5bd431d181026465656ff9",
+      "size": 16235,
       "required": true
     },
     {
@@ -144,8 +180,8 @@
     },
     {
       "relPath": "runtime-manifest.json",
-      "sha256": "251932662e9e6550d30c4cf2a50971351ce5864f54f4271f89d3b4d517796da8",
-      "size": 543,
+      "sha256": "332eda52f0ca91909fc9d9cccb8e7728ea186afe7e0e1bc76a67c5be00d96bad",
+      "size": 805,
       "required": true
     },
     {
@@ -167,5 +203,5 @@
       "required": true
     }
   ],
-  "rootFingerprint": "e3573526878cf23f517aaa583cffed63968f44237a9ca74e58cc0a442b9cfa73"
+  "rootFingerprint": "8da78924a59654be0e29903d888ab8b3e4637c1d2d254d07aa00e161a30ad30e"
 }
