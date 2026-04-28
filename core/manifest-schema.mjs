@@ -10,6 +10,14 @@
  *   - extension absent          -> PASS
  *   - extension present + type error -> FAIL
  *   - managedRoots = []         -> PASS (explicit empty)
+ *
+ * Empty-value semantics (template-default, treated as "user not yet configured"):
+ *   - surfacePatterns: []       -> PASS (consumers check `.length > 0` before use)
+ *   - scopeFolderMap: {}        -> PASS (consumers gate on `Object.keys.length > 0`)
+ *   - defaultScope/scopeFolderMap consistency check is skipped when scopeFolderMap is empty.
+ *
+ * Sentinel values:
+ *   - coreHooks: "all"          -> PASS (install-hooks.mjs reads this as "enable all hooks")
  */
 
 /**
@@ -61,17 +69,9 @@ function isStringArray(value) {
   return Array.isArray(value) && value.every((v) => typeof v === 'string');
 }
 
-function isRecordOfStringArray(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  for (const key of Object.keys(value)) {
-    if (!isStringArray(value[key])) return false;
-    if (value[key].length < 1) return false;
-  }
-  return Object.keys(value).length >= 1;
-}
-
 function validateSurfacePatterns(value, errors) {
   // Allowed: string[] or Record<scope, string[]>
+  // Empty array/object means "user not yet configured" — PASS (consumers gate on .length).
   if (Array.isArray(value)) {
     if (!value.every((v) => typeof v === 'string')) {
       errors.push({
@@ -82,28 +82,11 @@ function validateSurfacePatterns(value, errors) {
       });
       return false;
     }
-    if (value.length < 1) {
-      errors.push({
-        path: 'surfacePatterns',
-        expected: 'non-empty string[]',
-        actual: 'empty array',
-        severity: 'fail'
-      });
-      return false;
-    }
-    return true;
+    return true; // empty array OK
   }
   if (value && typeof value === 'object') {
     const keys = Object.keys(value);
-    if (keys.length < 1) {
-      errors.push({
-        path: 'surfacePatterns',
-        expected: 'Record with >=1 entry',
-        actual: 'empty object',
-        severity: 'fail'
-      });
-      return false;
-    }
+    if (keys.length === 0) return true; // empty object OK
     for (const key of keys) {
       if (!isStringArray(value[key])) {
         errors.push({
@@ -136,14 +119,19 @@ function validateScopeFolderMap(value, errors) {
     });
     return false;
   }
-  if (!isRecordOfStringArray(value)) {
-    errors.push({
-      path: 'scopeFolderMap',
-      expected: 'Record<string, string[]> with >=1 entry and non-empty arrays',
-      actual: 'malformed',
-      severity: 'fail'
-    });
-    return false;
+  // Empty object means "user not yet configured" — PASS (consumers gate on Object.keys.length).
+  if (Object.keys(value).length === 0) return true;
+  // Non-empty: enforce Record<string, string[]> with non-empty arrays.
+  for (const key of Object.keys(value)) {
+    if (!isStringArray(value[key]) || value[key].length < 1) {
+      errors.push({
+        path: 'scopeFolderMap',
+        expected: 'Record<string, string[]> with non-empty arrays',
+        actual: 'malformed',
+        severity: 'fail'
+      });
+      return false;
+    }
   }
   return true;
 }
@@ -213,12 +201,13 @@ function validateRequiredAxes(data, errors) {
 }
 
 function validateOptionalExtensions(data, errors) {
-  // coreHooks
+  // coreHooks: string[] OR sentinel "all" (install-hooks.mjs reads "all" as enable-all).
   if (data.coreHooks !== undefined) {
-    if (!isStringArray(data.coreHooks)) {
+    const isSentinel = data.coreHooks === 'all';
+    if (!isSentinel && !isStringArray(data.coreHooks)) {
       errors.push({
         path: 'coreHooks',
-        expected: 'string[]',
+        expected: 'string[] | "all"',
         actual: typeName(data.coreHooks),
         severity: 'fail'
       });

@@ -73,16 +73,27 @@ describe('manifest-schema.validateManifest', () => {
     assert.equal(r.valid, true);
   });
 
-  it('FAIL: surfacePatterns empty array', () => {
+  it('PASS: surfacePatterns empty array (user not yet configured)', () => {
+    // Empty value is template default; consumers (post-edit/session-end) gate on .length > 0.
     const m = baseManifest({ surfacePatterns: [] });
     const r = validateManifest(m);
-    assert.equal(r.valid, false);
+    assert.equal(r.valid, true, JSON.stringify(r.errors));
   });
 
-  it('FAIL: scopeFolderMap empty object', () => {
+  it('PASS: scopeFolderMap empty object (user not yet configured)', () => {
+    // Empty value is template default; consumers gate on Object.keys.length > 0.
+    // defaultScope consistency check is also skipped when scopeFolderMap is empty.
     const m = baseManifest({ scopeFolderMap: {} });
     const r = validateManifest(m);
+    assert.equal(r.valid, true, JSON.stringify(r.errors));
+  });
+
+  it('FAIL: scopeFolderMap with empty value array still rejected', () => {
+    // Non-empty map but malformed entry should still fail.
+    const m = baseManifest({ scopeFolderMap: { backend: [] } });
+    const r = validateManifest(m);
     assert.equal(r.valid, false);
+    assert.ok(r.errors.some((e) => e.path === 'scopeFolderMap'));
   });
 
   it('FAIL: defaultScope not a key of scopeFolderMap', () => {
@@ -99,6 +110,25 @@ describe('manifest-schema.validateManifest', () => {
     const m = baseManifest();
     const r = validateManifest(m);
     assert.equal(r.valid, true);
+  });
+
+  it('PASS: coreHooks sentinel "all" (install-hooks.mjs reads as enable-all)', () => {
+    const m = baseManifest({ coreHooks: 'all' });
+    const r = validateManifest(m);
+    assert.equal(r.valid, true, JSON.stringify(r.errors));
+  });
+
+  it('PASS: coreHooks string[] explicit list', () => {
+    const m = baseManifest({ coreHooks: ['PostToolUse', 'SessionEnd'] });
+    const r = validateManifest(m);
+    assert.equal(r.valid, true, JSON.stringify(r.errors));
+  });
+
+  it('FAIL: coreHooks invalid sentinel', () => {
+    const m = baseManifest({ coreHooks: 'all-of-them' });
+    const r = validateManifest(m);
+    assert.equal(r.valid, false);
+    assert.ok(r.errors.some((e) => e.path === 'coreHooks'));
   });
 
   it('PASS: managedRoots explicit empty array allowed', () => {
