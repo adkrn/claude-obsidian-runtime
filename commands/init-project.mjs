@@ -374,11 +374,61 @@ async function main() {
     process.stdout.write('  [doctor] Skipped (--no-doctor)\n');
   }
 
-  process.stdout.write('\nNext steps:\n');
-  process.stdout.write(`  1. export CLAUDE_RUNTIME_HOME="${PACKAGE_ROOT.replace(/\\/g, '/')}"\n`);
-  process.stdout.write(`  2. Edit .claude/runtime-manifest.json to set defaultScope, surfacePatterns\n`);
-  process.stdout.write(`  3. Edit document/obsidian_context/_meta/obsidian_paths.json to add indexTargets, scanRoots\n`);
-  process.stdout.write(`  4. Run: claude-obsidian-runtime sync\n`);
+  // Next steps — 4 phases (essential → recommended → optional → ongoing)
+  process.stdout.write('\n');
+  process.stdout.write('═══════════════════════════════════════════════════════════════════\n');
+  process.stdout.write(' Next Steps — 4 Phases\n');
+  process.stdout.write('═══════════════════════════════════════════════════════════════════\n');
+
+  process.stdout.write('\n[Phase 1: Essential Setup] (필수 — 지금 바로)\n');
+  process.stdout.write(`  1. 환경 변수 설정 (shell 프로필에 영구 등록 권장):\n`);
+  process.stdout.write(`     export CLAUDE_RUNTIME_HOME="${PACKAGE_ROOT.replace(/\\/g, '/')}"\n`);
+  process.stdout.write(`\n`);
+  process.stdout.write(`  2. (선택) 프로젝트 surface/scope 커스터마이징:\n`);
+  process.stdout.write(`     .claude/runtime-manifest.json 편집 — surfacePatterns / scopeFolderMap\n`);
+  process.stdout.write(`     (빈 값이어도 작동하지만, 채우면 lesson 분류 정확도 ↑)\n`);
+
+  process.stdout.write('\n[Phase 2: Lead Bootstrap] (필수 — Claude 첫 세션에서)\n');
+  process.stdout.write(`  3. Claude Code 세션 시작 (이 디렉토리에서):\n`);
+  process.stdout.write(`     - lead 에이전트(${args.projectId}-lead)에게 PM 부트스트랩 요청\n`);
+  process.stdout.write(`     - 예시 프롬프트: "${args.projectId}-lead 호출. PM 부트스트랩 시작해줘"\n`);
+  process.stdout.write(`     - lead가 projectKinds 질문 → 응답 (web / cli / data / library / unknown, 복수 가능)\n`);
+  process.stdout.write(`\n`);
+  process.stdout.write(`  4. 권장 에이전트 일괄 설치:\n`);
+  process.stdout.write(`     /agents-bootstrap\n`);
+  process.stdout.write(`     - dry-run으로 설치 대상 표시 → yes 응답 → 설치\n`);
+  process.stdout.write(`     - 각 kind별로 3~4개 에이전트 추가 (frontend-reviewer, api-designer 등)\n`);
+
+  process.stdout.write('\n[Phase 3: Optional Activation] (선택 — 학습 누적 강화)\n');
+  process.stdout.write(`  5. (선택) Code Index 빌드 — 코드 구조 인덱싱:\n`);
+  process.stdout.write(`     node "${PACKAGE_ROOT.replace(/\\/g, '/')}/commands/memory-refresh.mjs" \\\n`);
+  process.stdout.write(`          --project-dir "${projectDir.replace(/\\/g, '/')}"\n`);
+  process.stdout.write(`     (코드 5개 이상일 때 의미 있음)\n`);
+  process.stdout.write(`\n`);
+  process.stdout.write(`  6. (선택) Governance 활성화 — 위임 감사 로그:\n`);
+  process.stdout.write(`     .claude/runtime-manifest.json → "governance.enabled": true\n`);
+  process.stdout.write(`     - lead → subagent 위임을 .claude/runtime/delegations-YYYY-MM.jsonl 에 기록\n`);
+  process.stdout.write(`     - 비용 추적 + 무한루프 감지에 유용\n`);
+  process.stdout.write(`\n`);
+  process.stdout.write(`  7. (선택) Reflection 활성화 — 월간 메타 회고:\n`);
+  process.stdout.write(`     .claude/runtime-manifest.json → "reflection.enabled": true\n`);
+  process.stdout.write(`     - 월 1회 /reflection-run 실행 시 30일 패턴 자동 추출\n`);
+
+  process.stdout.write('\n[Phase 4: Ongoing Workflow] (작업 시작 후)\n');
+  process.stdout.write(`  8. 모든 작업은 /task-start ~ /task-close 사이클로 감싸기\n`);
+  process.stdout.write(`     - lesson / decision / troubleshooting draft 자동 생성\n`);
+  process.stdout.write(`     - 4-channel writeback 발동\n`);
+  process.stdout.write(`\n`);
+  process.stdout.write(`  9. 주기적 (월 1회 권장):\n`);
+  process.stdout.write(`     - /reflection-run  : 메타 회고 생성\n`);
+  process.stdout.write(`     - /architecture-promote : draft → 정식 문서 승격\n`);
+  process.stdout.write(`     - claude-obsidian-runtime doctor : 헬스 체크\n`);
+
+  process.stdout.write('\n───────────────────────────────────────────────────────────────────\n');
+  process.stdout.write(' 빠른 시작 (최소 절차):\n');
+  process.stdout.write('   Phase 1.1 (env) → Phase 2.3 (lead) → Phase 2.4 (agents-bootstrap)\n');
+  process.stdout.write(' 위 3단계만 완료해도 v3.3.0 핵심 기능 작동 시작.\n');
+  process.stdout.write('───────────────────────────────────────────────────────────────────\n');
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';

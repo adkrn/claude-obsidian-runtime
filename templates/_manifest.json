@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
-  "packageVersion": "3.3.1",
-  "generatedAt": "2026-04-28T02:26:52.031Z",
+  "packageVersion": "3.3.2",
+  "generatedAt": "2026-04-28T03:32:08.518Z",
   "generator": "scripts/build-template-manifest.mjs",
   "files": [
     {
