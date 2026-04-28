@@ -113,7 +113,7 @@ function validateScopeFolderMap(value, errors) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     errors.push({
       path: 'scopeFolderMap',
-      expected: 'Record<string, string[]>',
+      expected: 'Record<string, string | string[]>',
       actual: typeName(value),
       severity: 'fail'
     });
@@ -121,12 +121,17 @@ function validateScopeFolderMap(value, errors) {
   }
   // Empty object means "user not yet configured" — PASS (consumers gate on Object.keys.length).
   if (Object.keys(value).length === 0) return true;
-  // Non-empty: enforce Record<string, string[]> with non-empty arrays.
+  // Non-empty: each entry must be string OR non-empty string[].
+  // Consumer learning-curate.mjs:102 (`map[normalized]` — string value) and
+  // post-edit.mjs:42 (path-segment matching) both accept string OR string[].
   for (const key of Object.keys(value)) {
-    if (!isStringArray(value[key]) || value[key].length < 1) {
+    const v = value[key];
+    const isValidString = typeof v === 'string' && v.length > 0;
+    const isValidArray = isStringArray(v) && v.length >= 1;
+    if (!isValidString && !isValidArray) {
       errors.push({
         path: 'scopeFolderMap',
-        expected: 'Record<string, string[]> with non-empty arrays',
+        expected: 'Record<string, string | non-empty string[]>',
         actual: 'malformed',
         severity: 'fail'
       });

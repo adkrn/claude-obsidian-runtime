@@ -96,6 +96,28 @@ describe('manifest-schema.validateManifest', () => {
     assert.ok(r.errors.some((e) => e.path === 'scopeFolderMap'));
   });
 
+  it('PASS: scopeFolderMap with string values (consumer learning-curate.mjs:102 pattern)', () => {
+    // talkSim-style: { "scope-name": "FolderName" } — consumer reads `map[normalized]` as string.
+    const m = baseManifest({
+      defaultScope: 'frontend',
+      scopeFolderMap: { frontend: 'Frontend', backend: 'Backend' }
+    });
+    const r = validateManifest(m);
+    assert.equal(r.valid, true, JSON.stringify(r.errors));
+  });
+
+  it('FAIL: scopeFolderMap with empty string value', () => {
+    const m = baseManifest({ scopeFolderMap: { backend: '' } });
+    const r = validateManifest(m);
+    assert.equal(r.valid, false);
+  });
+
+  it('FAIL: scopeFolderMap with non-string non-array value', () => {
+    const m = baseManifest({ scopeFolderMap: { backend: 42 } });
+    const r = validateManifest(m);
+    assert.equal(r.valid, false);
+  });
+
   it('FAIL: defaultScope not a key of scopeFolderMap', () => {
     const m = baseManifest({
       defaultScope: 'nope',
