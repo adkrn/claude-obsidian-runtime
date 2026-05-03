@@ -10,7 +10,8 @@ import {
   parseArgs,
   runInit,
   DEFAULT_MANAGED_ROOTS_9,
-  substitute
+  substitute,
+  ensureSettingsLocalEnv
 } from '../init-project.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -235,5 +236,99 @@ describe('init-project — CLI (Case 6: --force overwrites lead despite preserve
     const newContent = fs.readFileSync(leadPath, 'utf8');
     assert.match(newContent, /name: forceproj-lead/);
     assert.ok(!newContent.startsWith('# OLD LEAD'));
+  });
+});
+
+describe('ensureSettingsLocalEnv (v3.3.4 — auto-inject CLAUDE_RUNTIME_HOME)', () => {
+  function makeProj() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-env-'));
+    const projectDir = path.join(root, 'proj');
+    fs.mkdirSync(path.join(projectDir, '.claude'), { recursive: true });
+    return { root, projectDir };
+  }
+  function cleanProj(p) {
+    try { fs.rmSync(p.root, { recursive: true, force: true }); } catch {}
+  }
+  const RUNTIME = 'c:/JSProj/claude-obsidian-runtime';
+
+  it('CASE 1: file missing → create minimal with env', () => {
+    const sb = makeProj();
+    try {
+      const status = ensureSettingsLocalEnv(sb.projectDir, RUNTIME);
+      assert.equal(status, 'created');
+      const settingsPath = path.join(sb.projectDir, '.claude', 'settings.local.json');
+      assert.ok(fs.existsSync(settingsPath));
+      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.equal(parsed.env.CLAUDE_RUNTIME_HOME, RUNTIME);
+    } finally { cleanProj(sb); }
+  });
+
+  it('CASE 2: file exists with permissions only → add env block (preserve other keys)', () => {
+    const sb = makeProj();
+    try {
+      const settingsPath = path.join(sb.projectDir, '.claude', 'settings.local.json');
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        permissions: { allow: ['Bash(echo:*)'] }
+      }, null, 2));
+      const status = ensureSettingsLocalEnv(sb.projectDir, RUNTIME);
+      assert.equal(status, 'added');
+      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.equal(parsed.env.CLAUDE_RUNTIME_HOME, RUNTIME);
+      assert.deepEqual(parsed.permissions.allow, ['Bash(echo:*)']);
+    } finally { cleanProj(sb); }
+  });
+
+  it('CASE 3: env exists but no CLAUDE_RUNTIME_HOME → add the key (preserve other env)', () => {
+    const sb = makeProj();
+    try {
+      const settingsPath = path.join(sb.projectDir, '.claude', 'settings.local.json');
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        env: { OTHER_VAR: 'preserve-me' }
+      }, null, 2));
+      const status = ensureSettingsLocalEnv(sb.projectDir, RUNTIME);
+      assert.equal(status, 'added');
+      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.equal(parsed.env.CLAUDE_RUNTIME_HOME, RUNTIME);
+      assert.equal(parsed.env.OTHER_VAR, 'preserve-me');
+    } finally { cleanProj(sb); }
+  });
+
+  it('CASE 4: CLAUDE_RUNTIME_HOME already set → preserve user value (no overwrite)', () => {
+    const sb = makeProj();
+    try {
+      const settingsPath = path.join(sb.projectDir, '.claude', 'settings.local.json');
+      const userValue = 'D:/custom/runtime/path';
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        env: { CLAUDE_RUNTIME_HOME: userValue }
+      }, null, 2));
+      const status = ensureSettingsLocalEnv(sb.projectDir, RUNTIME);
+      assert.equal(status, 'present');
+      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.equal(parsed.env.CLAUDE_RUNTIME_HOME, userValue, 'user value must not be overwritten');
+    } finally { cleanProj(sb); }
+  });
+
+  it('CASE 5: malformed JSON → return parse-error (do not destroy file)', () => {
+    const sb = makeProj();
+    try {
+      const settingsPath = path.join(sb.projectDir, '.claude', 'settings.local.json');
+      const malformed = '{ "permissions": { broken json';
+      fs.writeFileSync(settingsPath, malformed);
+      const status = ensureSettingsLocalEnv(sb.projectDir, RUNTIME);
+      assert.equal(status, 'parse-error');
+      const after = fs.readFileSync(settingsPath, 'utf8');
+      assert.equal(after, malformed, 'malformed file must be preserved as-is');
+    } finally { cleanProj(sb); }
+  });
+
+  it('CASE 6: backslash path normalized to forward slashes', () => {
+    const sb = makeProj();
+    try {
+      const status = ensureSettingsLocalEnv(sb.projectDir, 'C:\\JSProj\\claude-obsidian-runtime');
+      assert.equal(status, 'created');
+      const settingsPath = path.join(sb.projectDir, '.claude', 'settings.local.json');
+      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      assert.equal(parsed.env.CLAUDE_RUNTIME_HOME, 'C:/JSProj/claude-obsidian-runtime');
+    } finally { cleanProj(sb); }
   });
 });

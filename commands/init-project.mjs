@@ -19,7 +19,9 @@
  *   6. Copy templates/agents/_lead.md → .claude/agents/<projectId>-lead.md (§5-③ AC-15)
  *   7. Copy templates/eval/golden-tasks.json → .claude/runtime/eval/golden-tasks.json
  *   8. Invoke install-hooks to register hooks and patch settings.json
- *   9. Invoke doctor --full --since-init (§12-4) unless --no-doctor
+ *   9. Auto-inject CLAUDE_RUNTIME_HOME into .claude/settings.local.json env
+ *      (preserves existing keys; v3.3.4)
+ *  10. Invoke doctor --full --since-init (§12-4) unless --no-doctor
  *
  * Idempotent: existing files are not overwritten (see --force for lead upsert).
  */
@@ -260,6 +262,58 @@ export function runInit(opts) {
   return report;
 }
 
+/**
+ * Ensure .claude/settings.local.json contains env.CLAUDE_RUNTIME_HOME
+ * pointing to PACKAGE_ROOT.
+ *
+ * Behavior:
+ *   - File missing → create with minimal { env: { CLAUDE_RUNTIME_HOME: ... } }
+ *   - File exists, no env key → add env block (preserve other keys)
+ *   - File exists, env present, CLAUDE_RUNTIME_HOME missing → add the key
+ *   - File exists, CLAUDE_RUNTIME_HOME already set → no change (preserve user value)
+ *   - JSON parse fails → write WARNING to stderr, skip (do not destroy user file)
+ *
+ * Returns one of: 'created' | 'added' | 'present' | 'parse-error'
+ */
+export function ensureSettingsLocalEnv(projectDir, runtimeHomePath) {
+  const settingsPath = path.join(projectDir, '.claude', 'settings.local.json');
+  const runtimeHomePosix = runtimeHomePath.replace(/\\/g, '/');
+
+  // File missing → create minimal
+  if (!fs.existsSync(settingsPath)) {
+    ensureDir(path.dirname(settingsPath));
+    const content = {
+      env: { CLAUDE_RUNTIME_HOME: runtimeHomePosix }
+    };
+    fs.writeFileSync(settingsPath, JSON.stringify(content, null, 2) + '\n', 'utf8');
+    return 'created';
+  }
+
+  // File exists → parse
+  let parsed;
+  try {
+    const raw = fs.readFileSync(settingsPath, 'utf8');
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    process.stderr.write(`  [settings] WARN: ${settingsPath} parse failed (${err.message}). Skipping env injection — please add manually:\n`);
+    process.stderr.write(`             "env": { "CLAUDE_RUNTIME_HOME": "${runtimeHomePosix}" }\n`);
+    return 'parse-error';
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    process.stderr.write(`  [settings] WARN: ${settingsPath} root is not an object. Skipping env injection.\n`);
+    return 'parse-error';
+  }
+
+  parsed.env = parsed.env || {};
+  if (parsed.env.CLAUDE_RUNTIME_HOME) {
+    return 'present'; // preserve user value
+  }
+  parsed.env.CLAUDE_RUNTIME_HOME = runtimeHomePosix;
+  fs.writeFileSync(settingsPath, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
+  return 'added';
+}
+
 function copyTemplateWith(templatesDir, templateRel, targetPath, vars, force) {
   const src = path.join(templatesDir, templateRel);
   if (!fs.existsSync(src)) {
@@ -350,6 +404,22 @@ async function main() {
     process.stdout.write('  [hooks] Skipped (--skip-hooks)\n');
   }
 
+  // Auto-inject CLAUDE_RUNTIME_HOME into .claude/settings.local.json so that
+  // Claude Code sessions in this project always see the env regardless of shell.
+  // Preserves any existing settings/env keys.
+  try {
+    const status = ensureSettingsLocalEnv(projectDir, PACKAGE_ROOT);
+    const statusMsg = {
+      'created': 'created with env.CLAUDE_RUNTIME_HOME',
+      'added': 'env.CLAUDE_RUNTIME_HOME added (other keys preserved)',
+      'present': 'env.CLAUDE_RUNTIME_HOME already set (preserved)',
+      'parse-error': 'skipped (parse error — see WARN above)'
+    }[status] || status;
+    process.stdout.write(`  [settings] .claude/settings.local.json: ${statusMsg}\n`);
+  } catch (err) {
+    process.stderr.write(`  [settings] FAILED: ${err.message}\n`);
+  }
+
   process.stdout.write('\n');
   process.stdout.write(`Initialized project: ${args.projectId}\n`);
   process.stdout.write(`  Created: ${report.created.length} file(s)\n`);
@@ -380,9 +450,12 @@ async function main() {
   process.stdout.write(' Next Steps — 4 Phases\n');
   process.stdout.write('═══════════════════════════════════════════════════════════════════\n');
 
-  process.stdout.write('\n[Phase 1: Essential Setup] (필수 — 지금 바로)\n');
-  process.stdout.write(`  1. 환경 변수 설정 (shell 프로필에 영구 등록 권장):\n`);
-  process.stdout.write(`     export CLAUDE_RUNTIME_HOME="${PACKAGE_ROOT.replace(/\\/g, '/')}"\n`);
+  process.stdout.write('\n[Phase 1: Essential Setup] (자동 처리됨)\n');
+  process.stdout.write(`  1. CLAUDE_RUNTIME_HOME 환경변수:\n`);
+  process.stdout.write(`     ✅ .claude/settings.local.json 의 env 로 자동 주입됨\n`);
+  process.stdout.write(`     → Claude Code 세션 시작 시 자동 로드 (셸 무관)\n`);
+  process.stdout.write(`     → 외부 셸(bash/PowerShell)에서도 쓰려면 선택적으로:\n`);
+  process.stdout.write(`        export CLAUDE_RUNTIME_HOME="${PACKAGE_ROOT.replace(/\\/g, '/')}"\n`);
   process.stdout.write(`\n`);
   process.stdout.write(`  2. (선택) 프로젝트 surface/scope 커스터마이징:\n`);
   process.stdout.write(`     .claude/runtime-manifest.json 편집 — surfacePatterns / scopeFolderMap\n`);
