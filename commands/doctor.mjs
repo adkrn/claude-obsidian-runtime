@@ -139,7 +139,7 @@ function resolvePackageRoot() {
   return process.env.CLAUDE_RUNTIME_HOME || PACKAGE_ROOT;
 }
 
-function buildContext(args) {
+export function buildContext(args) {
   return {
     projectDir: args.projectDir,
     packageRoot: resolvePackageRoot(),
@@ -151,8 +151,14 @@ function buildContext(args) {
 /**
  * Run selected checks sequentially, sharing ctx across calls so that
  * C02/C03 populate manifest/paths for downstream checks.
+ *
+ * Exported for in-process callers (DESIGN_MANUS_4A §7 — task-close --verify
+ * imports doctor instead of spawning, to keep the call cheap and one-way:
+ * task-close → doctor). Caller-supplied ctx must include `projectDir` and
+ * `packageRoot`; pass `buildContext(parseArgs([...]))` to construct one
+ * with the same defaults the CLI uses.
  */
-async function runChecks(checkIds, ctx) {
+export async function runChecks(checkIds, ctx) {
   const checks = [];
   for (const id of checkIds) {
     const fn = CHECK_FN_MAP[id];

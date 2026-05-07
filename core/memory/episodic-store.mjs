@@ -59,7 +59,20 @@ function matchesFilter(event, filter) {
 
 /**
  * @param {string} projectDir
- * @param {object} event - episodic event payload (Design-A §3-C)
+ * @param {object} event - episodic event payload (Design-A §3-C).
+ *
+ *   Recognized flat fields (DESIGN_MANUS_E §6-A):
+ *     - ts, taskId, eventType, scope, toolName, outcome, level, detail
+ *     - recovery_attempts: number (≥0). 0 = first call (not a retry),
+ *       1..3 = cumulative retries within a (toolName, filePath, errorType)
+ *       3-tuple. cap=3 (E §5-A). errors.jsonl normalizes this snake_case
+ *       field to camelCase `recoveryAttempts` (B §4-A) — the two stores are
+ *       deliberately separated.
+ *
+ *   The append is structurally `{ ts, ...event }` — any flat field on the
+ *   event payload is preserved as-is. Filter keys (matchesFilter / query)
+ *   are not changed by E §6.
+ *
  * @returns {{ ok: true, file: string, ts: string }}
  */
 export function append(projectDir, event = {}) {

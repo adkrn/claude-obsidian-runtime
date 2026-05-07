@@ -1,13 +1,19 @@
 {
   "schemaVersion": "1.0.0",
   "packageVersion": "3.3.4",
-  "generatedAt": "2026-05-07T07:58:56.985Z",
+  "generatedAt": "2026-05-07T09:06:05.068Z",
   "generator": "scripts/build-template-manifest.mjs",
   "files": [
     {
+      "relPath": "agents/__tests__/lead-notify-ask.test.mjs",
+      "sha256": "141ee0f98dbbd655c9529f2ee05d0c81eb8fa9ebb5e22de55ddc38e322e4a3e3",
+      "size": 6051,
+      "required": false
+    },
+    {
       "relPath": "agents/_lead.md",
-      "sha256": "f2cdfdd955cdcd490a0087f542192ddedc34c5c750b5feb68373fc528570d66a",
-      "size": 11321,
+      "sha256": "022986d7d318dea3b7de6525d081ccb2ddb463e233fc7984a1e9278760725047",
+      "size": 15303,
       "required": true
     },
     {
@@ -198,8 +204,8 @@
     },
     {
       "relPath": "runtime-manifest.json",
-      "sha256": "846f347c26e327389894c7adf4996e36dce023f7a7452e7e69379476eb8bc21b",
-      "size": 1135,
+      "sha256": "3a26be7ba15b22315379a82401655314d80f236fd61e9b180a07f44f3534a4df",
+      "size": 1185,
       "required": true
     },
     {
@@ -222,8 +228,8 @@
     },
     {
       "relPath": "vault/08_Lessons/_TEMPLATE.md",
-      "sha256": "d18ad19172100f6764b909f16db94e2ab62313beef69233035537cbd86ae8ad3",
-      "size": 1158,
+      "sha256": "1dbec76eaabe26ff38dfb56c510bee90f0094584ae94c167496f55f3f9655755",
+      "size": 1199,
       "required": false
     },
     {
@@ -233,5 +239,5 @@
       "required": false
     }
   ],
-  "rootFingerprint": "17614f7f25b2cefbebc562b44c96a8f734eab68481555cdeb47aed6d9efb4e59"
+  "rootFingerprint": "26f2544028b34b6f29a2708186cd88faa3163851f57f456f59aa8327246915c2"
 }

@@ -28,7 +28,7 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { loadObsidianConfig } from '../core/obsidian-config.mjs';
 import { syncManagedRoots } from '../core/obsidian-sync.mjs';
-import { curateTaskKnowledge } from '../core/learning-curate.mjs';
+import { buildReflectionDraft, curateTaskKnowledge } from '../core/learning-curate.mjs';
 import {
   parseSessionEndArgs,
   rotateStaleEventLogs
@@ -48,6 +48,20 @@ import {
   writeJsonlFile
 } from '../core/runtime-lib.mjs';
 import { loadJson, normalizePath, sanitizeSlug, writeVaultArtifact } from '../core/utils.mjs';
+import {
+  buildContext as buildDoctorContext,
+  runChecks as runDoctorChecks
+} from './doctor.mjs';
+import {
+  buildReflectionInput,
+  deriveWorklogStatus,
+  evaluateVerifyResult,
+  formatUnverifiedBadge,
+  formatUnverifiedNotify,
+  prependUnverifiedBadge,
+  reflectionDraftRelativePath,
+  resolveVerifyOptions
+} from '../core/task-close-verify.mjs';
 
 function writeToVault(projectDir, relativePath, content, config) {
   return writeVaultArtifact({
@@ -297,7 +311,83 @@ async function main() {
 
   let worklogResult = null;
   let tokenUsage = null;
+  let verifyOutcome = null;
   if (args.close) {
+    // DESIGN_MANUS_4A §6 — verify gate (default ON, --no-verify skip).
+    const verifyOpts = resolveVerifyOptions(args);
+    if (verifyOpts.enabled && verifyOpts.invalidIds.length > 0) {
+      // §6-C — invalid check id → exit 1 with error, no worklog.
+      process.stderr.write(
+        `[session-end] unknown check id: ${verifyOpts.invalidIds.join(',')}\n`
+      );
+      process.exit(1);
+    }
+
+    if (verifyOpts.enabled) {
+      const doctorCtx = buildDoctorContext({ projectDir });
+      const checks = await runDoctorChecks(verifyOpts.checkIds, doctorCtx);
+      const evaluation = evaluateVerifyResult(checks);
+      verifyOutcome = {
+        unverified: evaluation.unverified,
+        failedChecks: evaluation.failedChecks,
+        warnedChecks: evaluation.warnedChecks,
+        rawCheckResults: evaluation.rawCheckResults,
+        reflectionDraftPath: '',
+        notify: '',
+        status: deriveWorklogStatus({ failedChecks: evaluation.failedChecks })
+      };
+
+      if (evaluation.unverified) {
+        // §5-B — synthesize input + invoke E §8 SSOT (algorithm not redefined).
+        const reflectionInput = buildReflectionInput({
+          task: taskRecord,
+          failedChecks: evaluation.failedChecks,
+          rawCheckResults: evaluation.rawCheckResults
+        });
+        const draft = buildReflectionDraft(reflectionInput);
+        if (draft) {
+          const relativePath = reflectionDraftRelativePath(taskRecord.taskId, now);
+          const draftBody = [
+            `# ${draft.title}`,
+            '',
+            `**Task:** ${draft.related_task}`,
+            `**Scope:** ${draft.scope}`,
+            `**Status:** ${draft.status}`,
+            `**Confidence of fix:** ${draft.confidence_of_fix}`,
+            '',
+            '## Summary',
+            '',
+            draft.verbal_summary || draft.summary,
+            '',
+            '## Failed Checks',
+            '',
+            ...evaluation.failedChecks.map((id) => `- ${id}`),
+            '',
+            '## Related Failures',
+            '',
+            ...(draft.related_failures || []).map((s) => `- ${s}`)
+          ].join('\n');
+          const writeResult = writeVaultArtifact({
+            projectDir,
+            vaultRoot: obsidianConfig?.vaultRoot || '',
+            relativePath,
+            content: draftBody,
+            queueRoot: 'document/obsidian_writeback_queue'
+          });
+          if (writeResult.storage === 'vault' || writeResult.storage === 'queue') {
+            verifyOutcome.reflectionDraftPath = relativePath;
+          }
+        }
+        // §5-A [NOTIFY] alert text — emitted on stderr so it does not corrupt
+        // the JSON stdout payload that callers parse.
+        verifyOutcome.notify = formatUnverifiedNotify({
+          failedChecks: evaluation.failedChecks,
+          reflectionDraftPath: verifyOutcome.reflectionDraftPath
+        });
+        process.stderr.write(`${verifyOutcome.notify}\n`);
+      }
+    }
+
     const usage = await tryCalculateTaskUsage(projectDir, { taskId: taskRecord.taskId, sessionId, closedAt: now.toISOString() });
     if (usage?.ok) tokenUsage = usage.usage;
     worklogResult = await tryGenerateWorklog(projectDir, {
@@ -308,8 +398,33 @@ async function main() {
       curation: {
         knowledgeFollowUp: taskRecord.knowledgeFollowUp || {},
         lessons: newLessons
-      }
+      },
+      verify: verifyOutcome
     });
+
+    // §5-A — prepend unverified badge to whatever worklog markdown the
+    // project-local generator returned. Done here (shared layer) so
+    // project-local worklog-generate.mjs needs no awareness of the verify
+    // gate. If the generator returned no markdown we still emit the alert.
+    if (verifyOutcome?.unverified && worklogResult?.worklog?.markdown) {
+      const badge = formatUnverifiedBadge({
+        failedChecks: verifyOutcome.failedChecks,
+        reflectionDraftPath: verifyOutcome.reflectionDraftPath
+      });
+      worklogResult.worklog.markdown = prependUnverifiedBadge(
+        worklogResult.worklog.markdown,
+        badge
+      );
+      worklogResult.worklog.status = verifyOutcome.status;
+      // If the generator already wrote the file, rewrite with the badge.
+      if (worklogResult.worklog.path) {
+        try {
+          fs.writeFileSync(worklogResult.worklog.path, worklogResult.worklog.markdown, 'utf8');
+        } catch (err) {
+          process.stderr.write(`[session-end] worklog badge write failed: ${err.message}\n`);
+        }
+      }
+    }
   }
 
   const finalStatus = args.close ? 'completed' : taskRecord.status || 'active';

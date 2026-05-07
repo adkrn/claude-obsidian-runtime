@@ -56,7 +56,15 @@ describe('SessionStart isolation', () => {
   let projectDir;
 
   beforeEach(() => { projectDir = makeProject(); });
-  afterEach(() => { fs.rmSync(projectDir, { recursive: true, force: true }); });
+  afterEach(() => {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+    // session-end CLI runs with the package root as cwd, so curate-driven
+    // writes for tasks scoped to "repo" can land in `<cwd>/08_Lessons/Repo/`.
+    // Sweep that directory after every test so subsequent suites (and S4
+    // sessions) start clean. The package itself has no real 08_Lessons
+    // tree at cwd — the runtime's lesson root is `templates/vault/08_Lessons`.
+    fs.rmSync(path.join(process.cwd(), '08_Lessons'), { recursive: true, force: true });
+  });
 
   it('does not attach an unrelated session to the global active task', () => {
     const sessionA = 'session-A';
@@ -97,7 +105,15 @@ describe('Stop hook isolation', () => {
   let projectDir;
 
   beforeEach(() => { projectDir = makeProject(); });
-  afterEach(() => { fs.rmSync(projectDir, { recursive: true, force: true }); });
+  afterEach(() => {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+    // session-end CLI runs with the package root as cwd, so curate-driven
+    // writes for tasks scoped to "repo" can land in `<cwd>/08_Lessons/Repo/`.
+    // Sweep that directory after every test so subsequent suites (and S4
+    // sessions) start clean. The package itself has no real 08_Lessons
+    // tree at cwd — the runtime's lesson root is `templates/vault/08_Lessons`.
+    fs.rmSync(path.join(process.cwd(), '08_Lessons'), { recursive: true, force: true });
+  });
 
   it('does not push a foreign sessionId into the task when only the global pointer matches', () => {
     const sessionA = 'session-A';
@@ -139,7 +155,15 @@ describe('SessionEnd isolation (regression)', () => {
   let projectDir;
 
   beforeEach(() => { projectDir = makeProject(); });
-  afterEach(() => { fs.rmSync(projectDir, { recursive: true, force: true }); });
+  afterEach(() => {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+    // session-end CLI runs with the package root as cwd, so curate-driven
+    // writes for tasks scoped to "repo" can land in `<cwd>/08_Lessons/Repo/`.
+    // Sweep that directory after every test so subsequent suites (and S4
+    // sessions) start clean. The package itself has no real 08_Lessons
+    // tree at cwd — the runtime's lesson root is `templates/vault/08_Lessons`.
+    fs.rmSync(path.join(process.cwd(), '08_Lessons'), { recursive: true, force: true });
+  });
 
   it('refuses to close another session\'s task', async () => {
     // Repeat the bug scenario:

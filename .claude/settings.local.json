@@ -90,7 +90,17 @@
       "Bash(find templates/vault/08_Lessons -type f)",
       "Bash(git push *)",
       "Bash(rm -rf \"C:/Users/adkrn/AppData/Local/Temp/manus-s2-prefix-RJAs67\" /tmp/s2-call-A.json /tmp/s2-call-B.json)",
-      "Bash(rm -rf 08_Lessons)"
+      "Bash(rm -rf 08_Lessons)",
+      "Bash(git stash *)",
+      "Bash(powershell -NoProfile -Command \"Get-ChildItem -Path 'C:\\\\Obsidian\\\\TalkSim\\\\07_Decisions' -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime, Length | Format-Table -AutoSize\")",
+      "PowerShell(Get-ChildItem -Path 'c:\\\\JSProj\\\\talkSim\\\\.claude' -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '006A' } | Select-Object FullName, LastWriteTime, Length | Format-Table -AutoSize)",
+      "PowerShell(Get-ChildItem -Path 'c:\\\\JSProj\\\\talkSim' -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '006A' -or $_.Name -match '006a' } | Select-Object FullName, LastWriteTime, Length | Format-Table -AutoSize -Wrap)",
+      "PowerShell(Set-Location 'c:\\\\JSProj\\\\talkSim'; $blobs = git fsck --lost-found 2>&1 | Where-Object { $_ -match 'dangling blob' } | ForEach-Object { \\($_ -split ' '\\)[-1] }; Write-Output \"Total dangling blobs: $\\($blobs.Count\\)\"; $hits = @\\(\\); foreach \\($b in $blobs\\) { $content = git cat-file -p $b 2>$null; if \\($content -match 'IMPL-006A' -or $content -match '006A' -and $content -match '시나리오'\\) { $hits += [PSCustomObject]@{ Sha = $b; Size = \\(git cat-file -s $b 2>$null\\); Preview = \\($content | Select-Object -First 1\\) } } }; $hits | Format-Table -AutoSize -Wrap)",
+      "PowerShell(Get-ChildItem -Path 'c:\\\\JSProj\\\\talkSim\\\\.claude\\\\runtime' -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'task-start|sync|mirror|prune' } | Select-Object FullName, Length | Format-Table -AutoSize)",
+      "Bash(where /r C:\\\\Users\\\\adkrn\\\\.claude\\\\plans MANUS_S3*.md)",
+      "Bash(where /r C:\\\\Users\\\\adkrn\\\\.claude\\\\plans IMPL-006A*.md)",
+      "Bash(where /r c:\\\\JSProj\\\\claude-obsidian-runtime MANUS_S3*.md)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\adkrn\\\\.claude\\\\plans\" -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.Name -match \"MANUS|IMPL-006|S3|E4AH\"} | Select-Object FullName)"
     ],
     "additionalDirectories": [
       "C:\\Users\\adkrn\\.claude\\plans",

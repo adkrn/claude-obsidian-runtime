@@ -42,6 +42,67 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 
   prefix 는 `[NOTIFY]` 로 고정 (non-blocking). `[ASK]` 는 사용 금지 — 사용자 응답 강제 X.
 
+## 에러 마주치면 (4단계 프로토콜)
+
+도구 호출 실패 시 다음 순서로 대응한다. 임의 단계 건너뛰기 금지.
+
+1. **verify**: 도구 이름과 인자를 자체 검증. 명백한 오타/형식 오류면 인자만 수정해 같은 도구로 재시도.
+2. **fix**: 에러 메시지를 해석한 뒤 인자를 수정해 같은 도구로 재시도. **동일 도구 + 동일 인자 재호출 금지** — 인자 일부라도 변경.
+3. **alternative**: 다른 도구 또는 다른 접근으로 같은 의도를 달성. (예: Edit → Write 전체 교체, Bash 단일 명령 → 분할 실행)
+4. **escalate**: 누적 3회 시도 실패 시 `[ASK]` prefix 로 사용자에게 결정 요청. 동시에 L4 Reflective draft 자동 생성 (`08_Reflections/Drafts/`).
+
+**MUST**:
+- 누적 시도 cap = **3회** (verify 1회 + fix 1~2회 + alternative 0~1회). 초과 시 자동 escalate.
+- 동일 `(toolName, filePath, errorType)` 3-tuple 안에서 동일 인자 재시도 금지.
+- 각 시도는 events.jsonl 에 `recovery_attempts: N` 필드로 기록.
+- cap 초과 시 reflection draft 자동 생성 + `[ASK]` 출력은 **같은 트리거**. 한쪽만 수행 X.
+
+**참고**:
+- `[ASK]` / `[NOTIFY]` prefix 컨벤션은 § "메시지 컨벤션 (notify vs ask)" 섹션 참조.
+- 4단계 진행 상태는 errors.jsonl `recoveryAttempts` / `resolved` / `linkedReflectionPath` 필드에 정규화되어 다음 세션의 "Related Past Failures" 주입에 재사용된다.
+
+## 메시지 컨벤션 (notify vs ask)
+
+모든 lead 출력 메시지는 prefix 를 사용한다. 사용자가 reply 해야 하는지 즉시 판별 가능해야 함.
+
+- **`[NOTIFY]`** — non-blocking. 사용자 reply 기대 X. 정보 전달용.
+  - 진행 보고 ("X 단계 완료, Y 단계 시작")
+  - 승격 후보 알림 ("lesson <slug> 승격 권장 — `/architecture-promote` 실행 가능")
+  - L4 Reflection draft 생성 알림 ("draft 생성: 08_Reflections/Drafts/<...>.md")
+  - lesson 품질 경고 ("lesson <id> applicable_when 미정의 — 채워주면 retrieval 정확도 ↑")
+  - task-close unverified 배지 알림 ("worklog unverified — 실패 체크: <ID 목록>")
+
+- **`[ASK]`** — blocking. 사용자 reply 필수. essential 한 결정만.
+  - 4단계 프로토콜 cap 초과 escalate ("3회 시도 실패 — 다음 접근 결정 필요")
+  - 자동 fallback 부재한 분기 (예: "어느 scope 에 lesson 추가?", scope 자동 추론 실패)
+  - 데이터 손실 위험한 작업 (예: "기존 worklog 덮어쓰기? (y/n)")
+
+**essential 기준** (셋 중 하나 이상 충족 시 `[ASK]`):
+1. 사용자가 답하지 않으면 진행 불가능 (자동 fallback 부재)
+2. 자동 fallback 부재 — lead 가 임의로 결정해도 안전한 default 없음
+3. 데이터 손실 위험 — 잘못된 자동 결정이 사용자 데이터 파괴 가능
+
+위 3개 모두 미충족이면 `[NOTIFY]` 로 격하. **사용자 방해 최소화 원칙**.
+
+**금지**:
+- 단순 정보 전달에 `[ASK]` 사용 X (사용자가 매번 reply 부담)
+- prefix 누락 X (사용자가 blocking 여부 판단 부담)
+- 한 메시지에 두 prefix 동시 사용 X
+
+**잘못된 사용 예시** (혼란 예방):
+
+- ❌ `[ASK] 작업 시작합니다`
+  → ✅ `[NOTIFY] 작업 시작합니다` (정보 전달만, reply 불필요)
+
+- ❌ `[NOTIFY] 어느 scope 에 lesson 추가할까요? (backend / frontend / repo)`
+  → ✅ `[ASK] 어느 scope 에 lesson 추가? (backend / frontend / repo)` (자동 추론 실패, reply 필수)
+
+- ❌ `[ASK] lesson 3개 생성 완료`
+  → ✅ `[NOTIFY] lesson 3개 생성 완료` (진행 보고)
+
+- ❌ `lesson <id> applicable_when 미정의` (prefix 누락)
+  → ✅ `[NOTIFY] lesson <id> applicable_when 미정의 — 채워주면 retrieval 정확도 ↑`
+
 ## Maker-Checker 역할 분리 (P2, 기획서 §R2-1)
 - **Maker (subagent)**: `.claude/agents/{{PROJECT_ID}}-*.md` 의 모든 비-lead 에이전트. draft lesson / decision / troubleshooting 을 `08_Lessons/Drafts/` · `07_Decisions/Drafts/` · `06_Troubleshooting/*/Drafts/` 에 생성.
 - **Checker (lead, 본인)**: subagent 의 draft 를 승격 전 아래 항목을 **검토** 한다.

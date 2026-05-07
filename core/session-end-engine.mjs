@@ -28,7 +28,14 @@ export function parseSessionEndArgs(argv) {
     hookEventName: 'SessionEnd',
     sessionId: '',
     transcriptPath: '',
-    skipArchivePlan: false
+    skipArchivePlan: false,
+    // DESIGN_MANUS_4A §6 — task-close verify gate.
+    //   verify === null  → option not specified; behaves as ON (§4-A default).
+    //   verify === true  → explicit --verify (same as default).
+    //   verify === false → --no-verify (skip).
+    // Last-token-wins (§6-B) is implemented by parsing in argv order.
+    verify: null,
+    verifyChecks: null
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -58,6 +65,24 @@ export function parseSessionEndArgs(argv) {
     }
     if (token === '--skip-archive-plan') {
       args.skipArchivePlan = true;
+      continue;
+    }
+    if (token === '--verify') {
+      args.verify = true;
+      continue;
+    }
+    if (token === '--no-verify') {
+      args.verify = false;
+      continue;
+    }
+    if (token === '--verify-checks') {
+      const raw = argv[index + 1] || '';
+      args.verifyChecks = raw
+        .split(',')
+        .map((v) => v.trim().toLowerCase())
+        .filter(Boolean);
+      index += 1;
+      continue;
     }
   }
 
