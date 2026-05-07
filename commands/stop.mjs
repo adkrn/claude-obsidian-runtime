@@ -26,27 +26,42 @@ export function checkpointRuntimeTask(projectDir, input = {}) {
   const sessionId = input.session_id || input.sessionId || '';
   const sessionPointer = sessionId ? loadSessionTaskPointer(projectDir, sessionId) : null;
   const globalPointer = loadCurrentTaskPointer(projectDir);
-  const activeTaskId = sessionPointer?.taskId || globalPointer?.taskId || '';
+
+  // Only treat the global pointer's task as ours when this session originated
+  // it. Otherwise this hook would attach the current sessionId to an
+  // unrelated task and let session-end close it on the wrong session.
+  let activeTaskId = sessionPointer?.taskId || '';
+  let ownsTask = Boolean(sessionPointer?.taskId);
+  if (!activeTaskId && globalPointer?.taskId) {
+    activeTaskId = globalPointer.taskId;
+    ownsTask = false;
+  }
   if (!activeTaskId) {
     return { ok: false, reason: 'no_active_task' };
   }
 
   const hookEventName = input.hook_event_name || input.hookEventName || 'Stop';
   const updatedAt = new Date().toISOString();
-  const updated = updateTaskRecord(projectDir, (task) => ({
-    ...task,
-    updatedAt,
-    sessionIds: uniqueStrings([...(task.sessionIds || []), sessionId]),
-    sessionTimeline: upsertTaskSessionTimeline(task, {
-      sessionId,
-      startedAt: getTaskSessionEntry(task, sessionId)?.startedAt || task.createdAt || updatedAt,
-      lastSeenAt: updatedAt,
-      transcriptPath: input.transcript_path || input.transcriptPath || ''
-    }),
-    lastCheckpoint: { ts: updatedAt, hookEventName, sessionId }
-  }), activeTaskId);
+  const updated = updateTaskRecord(projectDir, (task) => {
+    const base = {
+      ...task,
+      updatedAt,
+      lastCheckpoint: { ts: updatedAt, hookEventName, sessionId }
+    };
+    if (!ownsTask || !sessionId) return base;
+    return {
+      ...base,
+      sessionIds: uniqueStrings([...(task.sessionIds || []), sessionId]),
+      sessionTimeline: upsertTaskSessionTimeline(task, {
+        sessionId,
+        startedAt: getTaskSessionEntry(task, sessionId)?.startedAt || task.createdAt || updatedAt,
+        lastSeenAt: updatedAt,
+        transcriptPath: input.transcript_path || input.transcriptPath || ''
+      })
+    };
+  }, activeTaskId);
 
-  if (sessionId && updated?.task && updated?.taskPath) {
+  if (ownsTask && sessionId && updated?.task && updated?.taskPath) {
     writeSessionTaskPointer(
       projectDir,
       sessionId,
@@ -54,7 +69,7 @@ export function checkpointRuntimeTask(projectDir, input = {}) {
     );
   }
 
-  return { ok: Boolean(updated?.task), taskId: activeTaskId, hookEventName };
+  return { ok: Boolean(updated?.task), taskId: activeTaskId, hookEventName, ownsTask };
 }
 
 async function main() {

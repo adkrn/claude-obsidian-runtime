@@ -18,14 +18,15 @@ import {
   ensureRuntimeLayout,
   loadCurrentTaskPointer,
   loadLatestWorklogSummary,
+  loadSessionTaskPointer,
   loadTaskRecord,
   parseCliArgs,
-  uniqueStrings,
   updateTaskRecord,
-  upsertTaskSessionTimeline
+  upsertTaskSessionTimeline,
+  writeSessionTaskPointer
 } from '../core/runtime-lib.mjs';
 
-function buildAdditionalContext({ sessionId, currentTask, latestWorklog }) {
+function buildAdditionalContext({ sessionId, currentTask, globalTask, latestWorklog }) {
   const lines = ['[Runtime Session Context]'];
 
   if (sessionId) lines.push(`- session_id: ${sessionId}`);
@@ -47,6 +48,10 @@ function buildAdditionalContext({ sessionId, currentTask, latestWorklog }) {
     }
   } else {
     lines.push('- active_task: none');
+    if (globalTask?.task) {
+      const g = globalTask.task;
+      lines.push(`- other_session_active_task: ${g.taskId} :: ${g.title || g.prompt || g.taskId} (run /task-start to claim a task in this session)`);
+    }
   }
 
   if (latestWorklog?.worklogRelativePath) {
@@ -60,26 +65,62 @@ function buildAdditionalContext({ sessionId, currentTask, latestWorklog }) {
 export function buildRuntimeSessionStartContext(projectDir, input = {}) {
   ensureRuntimeLayout(projectDir);
   const sessionId = input.session_id || input.sessionId || '';
-  const pointer = loadCurrentTaskPointer(projectDir);
-  const currentTask = pointer?.taskId ? loadTaskRecord(projectDir, pointer.taskId) : null;
 
-  if (sessionId && currentTask?.task) {
+  // Session isolation: prefer per-session pointer. Never auto-attach this
+  // sessionId to the global pointer's task — that would let an unrelated
+  // session "inherit" another session's active task and accidentally close
+  // it later. Only tasks that explicitly belong to this session (via
+  // /task-start or a previously-written session pointer) are tracked here.
+  const sessionPointer = sessionId ? loadSessionTaskPointer(projectDir, sessionId) : null;
+  const ownedTask = sessionPointer?.taskId
+    ? loadTaskRecord(projectDir, sessionPointer.taskId)
+    : null;
+
+  if (sessionId && ownedTask?.task) {
     const startedAt = new Date().toISOString();
-    updateTaskRecord(projectDir, (task) => ({
-      ...task,
-      updatedAt: startedAt,
-      sessionIds: uniqueStrings([...(task.sessionIds || []), sessionId]),
-      sessionTimeline: upsertTaskSessionTimeline(task, {
-        sessionId,
-        startedAt,
-        lastSeenAt: startedAt,
-        transcriptPath: input.transcript_path || input.transcriptPath || ''
-      })
-    }), currentTask.task.taskId);
+    const updated = updateTaskRecord(projectDir, (task) => {
+      const alreadyKnown = Array.isArray(task.sessionIds) && task.sessionIds.includes(sessionId);
+      return {
+        ...task,
+        updatedAt: startedAt,
+        sessionIds: alreadyKnown
+          ? task.sessionIds
+          : [...(task.sessionIds || []), sessionId],
+        sessionTimeline: upsertTaskSessionTimeline(task, {
+          sessionId,
+          startedAt,
+          lastSeenAt: startedAt,
+          transcriptPath: input.transcript_path || input.transcriptPath || ''
+        })
+      };
+    }, ownedTask.task.taskId);
+
+    if (updated?.task && updated?.taskPath) {
+      writeSessionTaskPointer(projectDir, sessionId, {
+        taskId: updated.task.taskId,
+        title: updated.task.title || '',
+        status: updated.task.status || 'active',
+        taskPath: updated.taskPath,
+        contextPath: sessionPointer?.contextPath || '',
+        updatedAt: startedAt
+      });
+    }
   }
 
+  // Surface info about the global active task (read-only) so the user can
+  // see what's running elsewhere, but we do NOT mutate it.
+  const globalPointer = loadCurrentTaskPointer(projectDir);
+  const globalTask = globalPointer?.taskId && globalPointer.taskId !== ownedTask?.task?.taskId
+    ? loadTaskRecord(projectDir, globalPointer.taskId)
+    : null;
+
   const latestWorklog = loadLatestWorklogSummary(projectDir);
-  const additionalContext = buildAdditionalContext({ sessionId, currentTask, latestWorklog });
+  const additionalContext = buildAdditionalContext({
+    sessionId,
+    currentTask: ownedTask,
+    globalTask: ownedTask ? null : globalTask,
+    latestWorklog
+  });
 
   return {
     hookSpecificOutput: {

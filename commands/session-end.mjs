@@ -35,12 +35,15 @@ import {
 } from '../core/session-end-engine.mjs';
 import {
   appendJsonl,
+  clearCurrentTaskPointer,
+  clearSessionTaskPointer,
   ensureRuntimeLayout,
   findTaskBySessionId,
   getEventFilePath,
   getRuntimePaths,
   loadCurrentTaskPointer,
   loadJsonl,
+  loadSessionTaskPointer,
   writeJsonFile,
   writeJsonlFile
 } from '../core/runtime-lib.mjs';
@@ -222,21 +225,41 @@ async function main() {
   const sessionId = args.sessionId || '';
   const defaultScope = manifest.defaultScope || 'repo';
 
-  const pointer = loadCurrentTaskPointer(projectDir);
+  // Resolution order, strictest → loosest:
+  //   1) per-session pointer (current-task-<sessionId>.json) — strongest signal
+  //      that this task belongs to this session.
+  //   2) findTaskBySessionId — task record explicitly lists this sessionId.
+  //   3) global pointer — only if the task was originated by this session
+  //      (sessionIds[0] === sessionId). Without this guard, an unrelated
+  //      session can close another session's active task.
   let taskRecord = null;
   let resolvedTaskPath = '';
 
-  if (pointer?.taskPath) {
-    const candidate = loadJson(path.resolve(pointer.taskPath), null);
-    if (candidate && (!sessionId || !Array.isArray(candidate.sessionIds) || candidate.sessionIds.includes(sessionId))) {
-      taskRecord = candidate;
-      resolvedTaskPath = path.resolve(pointer.taskPath);
+  if (sessionId) {
+    const sessionPointer = loadSessionTaskPointer(projectDir, sessionId);
+    if (sessionPointer?.taskPath) {
+      const candidate = loadJson(path.resolve(sessionPointer.taskPath), null);
+      if (candidate) {
+        taskRecord = candidate;
+        resolvedTaskPath = path.resolve(sessionPointer.taskPath);
+      }
     }
   }
 
   if (!taskRecord && sessionId) {
     const found = findTaskBySessionId(projectDir, sessionId);
     if (found) { taskRecord = found.task; resolvedTaskPath = path.resolve(found.taskPath); }
+  }
+
+  const globalPointer = loadCurrentTaskPointer(projectDir);
+  if (!taskRecord && globalPointer?.taskPath) {
+    const candidate = loadJson(path.resolve(globalPointer.taskPath), null);
+    const ownerSession = Array.isArray(candidate?.sessionIds) ? candidate.sessionIds[0] : '';
+    const ownsTask = !sessionId || !ownerSession || ownerSession === sessionId;
+    if (candidate && ownsTask) {
+      taskRecord = candidate;
+      resolvedTaskPath = path.resolve(globalPointer.taskPath);
+    }
   }
 
   if (!taskRecord) {
@@ -297,13 +320,19 @@ async function main() {
     writeJsonFile(resolvedTaskPath, taskRecord);
   }
 
+  // Only touch the global current-task pointer when it actually points at
+  // the task we just resolved. Otherwise we'd clobber another session's
+  // active task pointer.
+  const globalTargetsThisTask = globalPointer?.taskId === taskRecord.taskId;
+
   if (args.close) {
-    writeJsonFile(runtimePaths.currentTaskPath, {
-      taskId: taskRecord.taskId,
-      status: 'completed',
-      updatedAt: now.toISOString()
-    });
-  } else {
+    if (globalTargetsThisTask) {
+      clearCurrentTaskPointer(projectDir, taskRecord.taskId);
+    }
+    if (sessionId) {
+      clearSessionTaskPointer(projectDir, sessionId, taskRecord.taskId);
+    }
+  } else if (globalTargetsThisTask) {
     writeJsonFile(runtimePaths.currentTaskPath, {
       taskId: taskRecord.taskId,
       status: finalStatus,

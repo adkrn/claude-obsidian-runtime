@@ -18,7 +18,12 @@
 
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { parseCliArgs, tokenizeSearchText } from '../core/runtime-lib.mjs';
+import {
+  parseCliArgs,
+  tokenizeSearchText,
+  toTaskPointer,
+  writeSessionTaskPointer
+} from '../core/runtime-lib.mjs';
 import { createAndStartTask } from '../core/task-start-engine.mjs';
 import {
   loadContextRoutes,
@@ -111,7 +116,17 @@ export function runTaskStart(argv) {
   return createAndStartTask(args, {
     syncVault: defaultSyncVault,
     resolveContext: defaultResolveContext,
-    defaultScope: 'repo'
+    defaultScope: 'repo',
+    afterWrite: ({ projectDir, sessionId, taskRecord, taskFilePath, runtimePaths }) => {
+      // Bind the new task to this session so SessionStart on a different
+      // session can't accidentally claim or close it via the global pointer.
+      if (!sessionId) return;
+      writeSessionTaskPointer(
+        projectDir,
+        sessionId,
+        toTaskPointer(taskRecord, taskFilePath, runtimePaths.lastContextPath)
+      );
+    }
   });
 }
 
