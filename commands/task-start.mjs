@@ -16,6 +16,7 @@
  *     - obsidian-sync
  */
 
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -32,6 +33,107 @@ import {
   buildGuardrails,
   buildReadFirst
 } from '../core/context-resolver.mjs';
+import { applyMMR, emitSortByPath } from '../core/memory/mmr.mjs';
+import { scoreItems } from '../core/memory/retrieval-scoring.mjs';
+
+// ── DESIGN_MANUS_C §6-B-1 — lesson MMR pipeline ─────────────────
+
+function loadProjectManifest(projectDir) {
+  try {
+    const raw = fs.readFileSync(
+      path.join(projectDir, '.claude', 'runtime-manifest.json'),
+      'utf8'
+    );
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function loadLessonRows(projectDir) {
+  try {
+    const file = path.join(projectDir, '.claude', 'runtime', 'knowledge', 'lessons.jsonl');
+    const raw = fs.readFileSync(file, 'utf8');
+    return raw
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        try { return JSON.parse(l); } catch { return null; }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * C §6-B-1 — lesson readFirst chain: scoreItems → filter -Inf → applyMMR → top-N → emitSortByPath.
+ *
+ * Returns supplementary readFirst entries (path/why/mirrorPath shape) sourced
+ * from lessons.jsonl, ordered by path asc for cache-friendly emit. Empty array
+ * when no lessons exist or none survive the gate.
+ */
+export function buildLessonReadFirst({
+  projectDir,
+  promptTokens,
+  matchedScopes,
+  candidatePaths,
+  manifest,
+  contextRoot,
+  topN = 3,
+  now
+}) {
+  const lessons = loadLessonRows(projectDir);
+  if (lessons.length === 0) return [];
+
+  const weights = manifest?.retrievalWeights || null;
+  const lambda = Number.isFinite(manifest?.retrievalWeights?.diversityLambda)
+    ? manifest.retrievalWeights.diversityLambda
+    : undefined;
+  const jaccardThreshold = Number.isFinite(manifest?.retrievalWeights?.diversityJaccardThreshold)
+    ? manifest.retrievalWeights.diversityJaccardThreshold
+    : undefined;
+
+  // 1 + 2. F gate + 3-axis score (scoreItem handles both inside scoreItems).
+  const ctx = {
+    promptTokens,
+    weights,
+    candidatePaths,
+    signalTokens: promptTokens,
+    activeScopes: matchedScopes,
+    gateMode: 'exclude',
+    now: now instanceof Date ? now : new Date()
+  };
+  const scored = scoreItems(lessons, ctx);
+
+  // 3. Drop gate-excluded entries (-Infinity).
+  const filtered = scored.filter((s) => Number.isFinite(s.score));
+  if (filtered.length === 0) return [];
+
+  // 4. MMR diversity penalty.
+  const mmrApplied = applyMMR(filtered, { lambda, jaccardThreshold });
+
+  // 5. top-N slice → emit-time path asc sort (cache-friendly).
+  const top = mmrApplied.slice(0, topN);
+  const items = top.map((entry) => entry.item);
+  const ordered = emitSortByPath(items);
+
+  return ordered.map((lesson) => {
+    const sourcePath = lesson.sourceDoc || lesson.path || '';
+    const mirrorCandidate = sourcePath
+      ? path.join(contextRoot || '', ...String(sourcePath).split('/'))
+      : '';
+    const hasMirror = mirrorCandidate ? fs.existsSync(mirrorCandidate) : false;
+    return {
+      path: sourcePath,
+      why: `lesson: ${(lesson.title || lesson.summary || '').slice(0, 120)}`,
+      mirrorPath: hasMirror
+        ? path.posix.join('document', 'obsidian_context', sourcePath)
+        : ''
+    };
+  }).filter((item) => item.path);
+}
 
 function defaultSyncVault() {
   // Lightweight no-op sync: task-start should never block on vault mirroring.
@@ -67,7 +169,32 @@ function defaultResolveContext({ projectDir, task, limit = 6 }) {
     why: note.why || '',
     mirrorPath: note.mirrorPath || ''
   }));
-  const readFirst = buildReadFirst(baseReadFirst, knowledgeHits, contextRoot);
+  const knowledgeReadFirst = buildReadFirst(baseReadFirst, knowledgeHits, contextRoot);
+
+  // C §6-B-1 — supplementary lesson MMR chain (F gate → score → MMR → emit asc).
+  const manifest = loadProjectManifest(projectDir);
+  const candidatePaths = baseReadFirst
+    .map((entry) => String(entry.path || '').replace(/\\/g, '/'))
+    .filter(Boolean);
+  const lessonReadFirst = buildLessonReadFirst({
+    projectDir,
+    promptTokens,
+    matchedScopes,
+    candidatePaths,
+    manifest,
+    contextRoot,
+    topN: 3
+  });
+
+  // Merge + dedup by path, then emit path asc (D §5-C-1 / C §5-A-3 alignment).
+  const seenPaths = new Set();
+  const mergedReadFirst = [];
+  for (const entry of [...knowledgeReadFirst, ...lessonReadFirst]) {
+    if (!entry?.path || seenPaths.has(entry.path)) continue;
+    seenPaths.add(entry.path);
+    mergedReadFirst.push(entry);
+  }
+  const readFirst = emitSortByPath(mergedReadFirst).slice(0, 8);
 
   const guardrails = buildGuardrails(promptTokens, matchedGroups, matchedScopes);
 

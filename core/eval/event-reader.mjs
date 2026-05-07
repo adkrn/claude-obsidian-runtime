@@ -1,11 +1,19 @@
 // Event reader for the eval frame.
 // Reads events/<scope>.jsonl files within a rolling time window
 // and groups them by taskId. Spec: DESIGN_C §2-F.
+//
+// DESIGN_MANUS_I §5-B (Wave C interface) — `loadPayload` resolves a
+// `payload_ref` blob back to its original byte contents. The reader itself
+// already passes payload_ref through transparently because rows are returned
+// as-is; this module just adds the explicit resolver helper.
 
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
 const DAY_MS = 86400 * 1000;
+
+const EVENTS_RUNTIME_SUBPATH = ['.claude', 'runtime', 'events'];
 
 function safeReaddir(dir) {
   try {
@@ -104,4 +112,42 @@ export function extractFirstEditedFile(taskEvents) {
     }
   }
   return null;
+}
+
+/**
+ * DESIGN_MANUS_I §5-B — resolve a payload_ref to its original byte contents.
+ *
+ * The blob lives at `<projectDir>/.claude/runtime/events/<payloadRef.ref>`.
+ * When `payloadRef.hash` is present (full sha256 hex), the result is verified
+ * for byte-level integrity; mismatch throws (P-M4 §3 violation guard).
+ *
+ * Wave C wires the actual write off-load (DESIGN_MANUS_I §5-A, CD-M9). This
+ * module ships the read interface only.
+ *
+ * @param {string} projectDir
+ * @param {{ type: string, ref: string, size?: number, hash?: string, mime?: string }} payloadRef
+ * @returns {string} blob contents as a UTF-8 string
+ */
+export function loadPayload(projectDir, payloadRef) {
+  if (typeof projectDir !== 'string' || projectDir.length === 0) {
+    throw new TypeError('loadPayload: projectDir required');
+  }
+  if (!payloadRef || typeof payloadRef !== 'object') {
+    throw new TypeError('loadPayload: payloadRef object required');
+  }
+  if (payloadRef.type !== 'blob') {
+    throw new TypeError(`loadPayload: unsupported payload_ref.type "${payloadRef.type}"`);
+  }
+  if (typeof payloadRef.ref !== 'string' || payloadRef.ref.length === 0) {
+    throw new TypeError('loadPayload: payload_ref.ref required');
+  }
+  const blobPath = path.join(projectDir, ...EVENTS_RUNTIME_SUBPATH, ...payloadRef.ref.split('/'));
+  const content = fs.readFileSync(blobPath, 'utf8');
+  if (typeof payloadRef.hash === 'string' && payloadRef.hash.length > 0) {
+    const actual = crypto.createHash('sha256').update(content).digest('hex');
+    if (actual !== payloadRef.hash) {
+      throw new Error(`loadPayload: hash mismatch for ${payloadRef.ref} (expected ${payloadRef.hash}, got ${actual})`);
+    }
+  }
+  return content;
 }

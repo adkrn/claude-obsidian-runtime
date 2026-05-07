@@ -88,7 +88,9 @@
       "Bash(head -20 commands/__tests__/session-isolation.test.mjs)",
       "Bash(find 08_Lessons -type f)",
       "Bash(find templates/vault/08_Lessons -type f)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(rm -rf \"C:/Users/adkrn/AppData/Local/Temp/manus-s2-prefix-RJAs67\" /tmp/s2-call-A.json /tmp/s2-call-B.json)",
+      "Bash(rm -rf 08_Lessons)"
     ],
     "additionalDirectories": [
       "C:\\Users\\adkrn\\.claude\\plans",

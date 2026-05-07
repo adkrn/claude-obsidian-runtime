@@ -8,6 +8,14 @@
   "surfacePatterns": [],
   "scopeFolderMap": {},
   "preserveHooks": [],
+  "retrievalWeights": {
+    "alphaRecency": 1.0,
+    "alphaImportance": 1.0,
+    "alphaRelevance": 1.5,
+    "decayRatePerDay": 0.05,
+    "diversityLambda": 0.2,
+    "diversityJaccardThreshold": 0.7
+  },
   "sessionEndPipeline": ["all"],
   "projectKinds": [],
   "agentFanoutCap": 2,

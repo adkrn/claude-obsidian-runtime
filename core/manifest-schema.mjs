@@ -50,6 +50,12 @@ const RETRIEVAL_WEIGHTS_KEYS = [
   'decayRatePerDay'
 ];
 
+// DESIGN_MANUS_C §4-C — optional diversity sub-keys (default 0.2 / 0.7).
+const RETRIEVAL_WEIGHTS_OPTIONAL_KEYS = [
+  'diversityLambda',
+  'diversityJaccardThreshold'
+];
+
 const MEMORY_LAYERS_KEYS = {
   reflectionsEnabled: 'boolean',
   proceduralEnabled: 'boolean',
@@ -241,6 +247,19 @@ function validateOptionalExtensions(data, errors) {
       });
     } else {
       for (const key of RETRIEVAL_WEIGHTS_KEYS) {
+        if (typeof rw[key] !== 'number' || Number.isNaN(rw[key])) {
+          errors.push({
+            path: `retrievalWeights.${key}`,
+            expected: 'number',
+            actual: typeName(rw[key]),
+            severity: 'fail'
+          });
+        }
+      }
+      // DESIGN_MANUS_C §4-C — diversity sub-keys are optional but, when present,
+      // must be valid numbers. Absence is fine (consumer applies defaults).
+      for (const key of RETRIEVAL_WEIGHTS_OPTIONAL_KEYS) {
+        if (rw[key] === undefined) continue;
         if (typeof rw[key] !== 'number' || Number.isNaN(rw[key])) {
           errors.push({
             path: `retrievalWeights.${key}`,

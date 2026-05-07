@@ -1,13 +1,13 @@
 {
   "schemaVersion": "1.0.0",
   "packageVersion": "3.3.4",
-  "generatedAt": "2026-05-03T23:55:58.544Z",
+  "generatedAt": "2026-05-07T07:58:56.985Z",
   "generator": "scripts/build-template-manifest.mjs",
   "files": [
     {
       "relPath": "agents/_lead.md",
-      "sha256": "aabc75e2536bdf519901ae1a427011d917737aba3bcae0a6385cad72e18c1241",
-      "size": 10412,
+      "sha256": "f2cdfdd955cdcd490a0087f542192ddedc34c5c750b5feb68373fc528570d66a",
+      "size": 11321,
       "required": true
     },
     {
@@ -198,8 +198,8 @@
     },
     {
       "relPath": "runtime-manifest.json",
-      "sha256": "30c85d47b69a76150fc355f3e26f7d27a812d8f19c404aa7608d70f6f8738270",
-      "size": 932,
+      "sha256": "846f347c26e327389894c7adf4996e36dce023f7a7452e7e69379476eb8bc21b",
+      "size": 1135,
       "required": true
     },
     {
@@ -221,11 +221,17 @@
       "required": true
     },
     {
+      "relPath": "vault/08_Lessons/_TEMPLATE.md",
+      "sha256": "d18ad19172100f6764b909f16db94e2ab62313beef69233035537cbd86ae8ad3",
+      "size": 1158,
+      "required": false
+    },
+    {
       "relPath": "vault/08_Reflections/Drafts/.gitkeep",
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "size": 0,
       "required": false
     }
   ],
-  "rootFingerprint": "ece73f46fac69a4f31a391254a5d9f7dbd5ec47876d1dd9d24755fea575d384f"
+  "rootFingerprint": "17614f7f25b2cefbebc562b44c96a8f734eab68481555cdeb47aed6d9efb4e59"
 }
