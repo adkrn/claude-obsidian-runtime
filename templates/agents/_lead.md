@@ -25,6 +25,22 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Agent
   → `context_routes.json:groups` 업데이트 diff 제안
 - **lesson 품질 점검**: learning-curate가 생성한 lesson draft의 `trigger_keywords` / `applicable_when`
   필드가 비어있으면 채우라는 경고 출력
+- **applicable_when 객체 형식 점검 (DESIGN_MANUS_F §6-B)**: lesson draft 의 `applicable_when` 이
+  미정의이거나 자유 텍스트(legacy string) 형식이면 `[NOTIFY]` prefix 로 1회 경고. retrieval
+  게이트에서는 backward-compat 으로 통과 처리되지만 precision 향상을 위해 객체 형태로
+  수동 갱신을 권장한다. 메시지 컨벤션:
+
+  ```
+  [NOTIFY] lesson <lessonId> 의 applicable_when 이 미정의 또는 자유 텍스트 형식입니다.
+          retrieval 게이트에서 항상 통과 처리됩니다 (CD-M5 backward-compat).
+          precision 향상을 위해 다음 객체 형태로 수동 갱신 권장:
+            applicable_when:
+              path_glob: [...]
+              trigger_keywords: [...]
+              scope_id: <id>
+  ```
+
+  prefix 는 `[NOTIFY]` 로 고정 (non-blocking). `[ASK]` 는 사용 금지 — 사용자 응답 강제 X.
 
 ## Maker-Checker 역할 분리 (P2, 기획서 §R2-1)
 - **Maker (subagent)**: `.claude/agents/{{PROJECT_ID}}-*.md` 의 모든 비-lead 에이전트. draft lesson / decision / troubleshooting 을 `08_Lessons/Drafts/` · `07_Decisions/Drafts/` · `06_Troubleshooting/*/Drafts/` 에 생성.

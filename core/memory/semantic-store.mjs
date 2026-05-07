@@ -37,6 +37,40 @@ function isoNow() {
   return new Date().toISOString();
 }
 
+/**
+ * Normalize lesson `applicable_when` field (DESIGN_MANUS_F §6-A).
+ *
+ *   - null/undefined            → null
+ *   - "" (empty string)         → null
+ *   - non-empty string (legacy) → preserved as-is (gate handles via legacyString)
+ *   - object                    → sub-field validated copy
+ *   - other primitives/arrays   → null
+ */
+export function normalizeApplicableWhen(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    return value.length === 0 ? null : value;
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) return null;
+
+  const out = {};
+  if (Array.isArray(value.path_glob)) {
+    const arr = value.path_glob.filter((s) => typeof s === 'string' && s.length > 0);
+    if (arr.length > 0) out.path_glob = arr;
+  }
+  if (Array.isArray(value.trigger_keywords)) {
+    const arr = value.trigger_keywords.filter((s) => typeof s === 'string' && s.length > 0);
+    if (arr.length > 0) out.trigger_keywords = arr;
+  }
+  if (typeof value.scope_id === 'string' && value.scope_id.length > 0) {
+    out.scope_id = value.scope_id;
+  } else if (Array.isArray(value.scope_id)) {
+    const arr = value.scope_id.filter((s) => typeof s === 'string' && s.length > 0);
+    if (arr.length > 0) out.scope_id = arr;
+  }
+  return out;
+}
+
 function lessonsPath(projectDir) {
   const { knowledgeRoot } = getRuntimePaths(projectDir);
   return path.join(knowledgeRoot, LESSONS_JSONL);
@@ -86,7 +120,7 @@ function normalizeLesson(lesson) {
     updated_at: lesson.updated_at || now,
     confidence: lesson.confidence || 'medium',
     trigger_keywords: Array.isArray(lesson.trigger_keywords) ? lesson.trigger_keywords : [],
-    applicable_when: lesson.applicable_when || '',
+    applicable_when: normalizeApplicableWhen(lesson.applicable_when),
     related_task: lesson.related_task || '',
     related_files: Array.isArray(lesson.related_files) ? lesson.related_files : [],
     status: lesson.status || 'draft'

@@ -11,6 +11,7 @@
  *   (or bound to SessionStart hook via install-hooks)
  */
 
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { readStdinJson } from '../core/utils.mjs';
@@ -21,12 +22,154 @@ import {
   loadSessionTaskPointer,
   loadTaskRecord,
   parseCliArgs,
+  tokenizeSearchText,
+  uniqueStrings,
   updateTaskRecord,
   upsertTaskSessionTimeline,
   writeSessionTaskPointer
 } from '../core/runtime-lib.mjs';
+import { scoreItems } from '../core/memory/retrieval-scoring.mjs';
+import { loadErrors } from '../core/error-indexer.mjs';
 
-function buildAdditionalContext({ sessionId, currentTask, globalTask, latestWorklog }) {
+// ── DESIGN_MANUS_B §6/§7 — Related Past Failures injection ───────
+
+// AVOIDANCE_HINTS — initial 4 errorTypes (B §7-B). Expand as ops data grows.
+const AVOIDANCE_HINTS = {
+  'string-not-found': '컨텍스트 5줄 더 포함해서 재시도',
+  'ENOENT': '경로 존재 확인 후 재시도',
+  'permission-denied': '권한 또는 파일 잠금 확인',
+  'parse-error': '입력 형식 검증 후 재시도'
+};
+
+const FAILURE_FALLBACK_THRESHOLD = 5;
+const FAILURE_TOP_N = 3;
+const FAILURE_WINDOW_DAYS = 30;
+
+function loadDefaultScopeFromManifest(projectDir) {
+  try {
+    const manifestPath = path.join(projectDir, '.claude', 'runtime-manifest.json');
+    const raw = fs.readFileSync(manifestPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.defaultScope === 'string' && parsed.defaultScope.length > 0) {
+      return { defaultScope: parsed.defaultScope, retrievalWeights: parsed.retrievalWeights || null };
+    }
+  } catch {
+    // missing or invalid → caller falls back to repo
+  }
+  return { defaultScope: 'repo', retrievalWeights: null };
+}
+
+/**
+ * B §6-A — collect signal context for the gate / scoring.
+ * Pure helper (no I/O); accepts pre-loaded task/worklog/manifest.
+ */
+export function collectSignalContext(currentTask, latestWorklog, manifest) {
+  const defaultScope = (manifest && typeof manifest.defaultScope === 'string')
+    ? manifest.defaultScope
+    : 'repo';
+
+  if (currentTask?.task) {
+    const t = currentTask.task;
+    const activeScopes = Array.isArray(t.matchedScopes) && t.matchedScopes.length > 0
+      ? t.matchedScopes.slice()
+      : [defaultScope];
+    const readFirstPaths = Array.isArray(t.readFirst)
+      ? t.readFirst.map((r) => (r && typeof r.path === 'string' ? r.path : '')).filter(Boolean)
+      : [];
+    const candidatePaths = readFirstPaths.map((p) => p.replace(/\\/g, '/')).sort();
+    const tokens = uniqueStrings([
+      ...tokenizeSearchText(t.prompt || ''),
+      ...tokenizeSearchText(t.title || ''),
+      ...candidatePaths.flatMap((p) => tokenizeSearchText(path.basename(p)))
+    ]);
+    return { activeScopes, candidatePaths, signalTokens: tokens };
+  }
+
+  const summary = latestWorklog?.summary || latestWorklog?.summaryText || '';
+  return {
+    activeScopes: [defaultScope],
+    candidatePaths: [],
+    signalTokens: uniqueStrings(tokenizeSearchText(summary))
+  };
+}
+
+function parseTsMs(value) {
+  const n = Date.parse(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatErrorLines(errors, modeFallback) {
+  const header = modeFallback
+    ? '### Related Past Failures (fallback: time-based, errors < 5)'
+    : '### Related Past Failures (avoid repeating)';
+  const out = [header];
+  for (const err of errors) {
+    const tool = err.tool || 'unknown';
+    const errorType = err.errorType || 'unknown';
+    const filePath = err.filePath || '(no path)';
+    const attempts = Number.isFinite(err.recoveryAttempts) ? err.recoveryAttempts : 0;
+
+    if (modeFallback) {
+      out.push(`- [tool=${tool}] ${errorType} in ${filePath}`);
+      continue;
+    }
+
+    let resolvedStr;
+    if (err.resolved && err.linkedReflectionPath) {
+      resolvedStr = `resolved via ${err.linkedReflectionPath}`;
+    } else if (err.resolved) {
+      resolvedStr = 'resolved';
+    } else {
+      resolvedStr = '미해결';
+    }
+    out.push(`- [tool=${tool}] ${errorType} in ${filePath} (${attempts}회 시도, ${resolvedStr})`);
+
+    if (err.linkedReflectionPath) {
+      out.push(`    → 참조: ${err.linkedReflectionPath}`);
+    } else if (!err.resolved) {
+      const hint = AVOIDANCE_HINTS[errorType];
+      if (hint) out.push(`    → 회피: ${hint}`);
+    }
+  }
+  return out.join('\n');
+}
+
+/**
+ * B §6/§7 — produce the "Related Past Failures" block.
+ * Returns null when no errors exist (block omitted entirely).
+ *
+ * Pure-ish: takes pre-loaded errors and signal context + weights.
+ */
+export function buildErrorInjectionBlock(errors, signalCtx, options = {}) {
+  if (!Array.isArray(errors) || errors.length === 0) return null;
+
+  if (errors.length < FAILURE_FALLBACK_THRESHOLD) {
+    const sorted = [...errors].sort((a, b) => parseTsMs(b.timestamp) - parseTsMs(a.timestamp));
+    return formatErrorLines(sorted.slice(0, FAILURE_TOP_N), true);
+  }
+
+  const ctx = {
+    promptTokens: signalCtx.signalTokens,
+    candidatePaths: signalCtx.candidatePaths,
+    signalTokens: signalCtx.signalTokens,
+    activeScopes: signalCtx.activeScopes,
+    weights: options.weights || null,
+    gateMode: 'exclude',
+    now: options.now instanceof Date ? options.now : new Date()
+  };
+  const scored = scoreItems(errors, ctx);
+  const passed = scored.filter((s) => s.score > -Infinity);
+  if (passed.length === 0) return null;
+  return formatErrorLines(passed.slice(0, FAILURE_TOP_N).map((s) => s.item), false);
+}
+
+function buildAdditionalContext({
+  sessionId,
+  currentTask,
+  globalTask,
+  latestWorklog,
+  errorBlock
+}) {
   const lines = ['[Runtime Session Context]'];
 
   if (sessionId) lines.push(`- session_id: ${sessionId}`);
@@ -57,6 +200,11 @@ function buildAdditionalContext({ sessionId, currentTask, globalTask, latestWork
   if (latestWorklog?.worklogRelativePath) {
     lines.push(`- last_worklog: ${latestWorklog.worklogRelativePath}`);
     lines.push(`- last_worklog_summary: modified=${latestWorklog.modifiedFileCount}, failures=${latestWorklog.failureCount}, hook=${latestWorklog.hookEventName || ''}`);
+  }
+
+  if (typeof errorBlock === 'string' && errorBlock.length > 0) {
+    lines.push('');
+    lines.push(errorBlock);
   }
 
   return lines.join('\n');
@@ -115,11 +263,27 @@ export function buildRuntimeSessionStartContext(projectDir, input = {}) {
     : null;
 
   const latestWorklog = loadLatestWorklogSummary(projectDir);
+
+  // B §6 — Related Past Failures injection
+  const manifestSnapshot = loadDefaultScopeFromManifest(projectDir);
+  const signalCtx = collectSignalContext(ownedTask, latestWorklog, manifestSnapshot);
+  let errorBlock = null;
+  try {
+    const errors = loadErrors(projectDir, { windowDays: FAILURE_WINDOW_DAYS });
+    errorBlock = buildErrorInjectionBlock(errors, signalCtx, {
+      weights: manifestSnapshot.retrievalWeights
+    });
+  } catch {
+    // errors.jsonl missing/corrupt → silently omit block
+    errorBlock = null;
+  }
+
   const additionalContext = buildAdditionalContext({
     sessionId,
     currentTask: ownedTask,
     globalTask: ownedTask ? null : globalTask,
-    latestWorklog
+    latestWorklog,
+    errorBlock
   });
 
   return {

@@ -644,13 +644,11 @@ export function buildLessonDraft(task, events = []) {
     safeTask.title || safeTask.prompt || safeTask.taskId || 'Auto Lesson',
     72
   );
-  const surfaces = Array.isArray(safeTask.detectedSurfaces)
-    ? safeTask.detectedSurfaces.map((s) => String(s.surfaceType || s.type || '')).filter(Boolean)
-    : [];
-  const applicableWhen = [scope, ...surfaces]
-    .filter(Boolean)
-    .slice(0, 3)
-    .join(' / ');
+  // applicable_when: scope_id 만 자동 채움. path_glob/trigger_keywords 는
+  // 사람 큐레이션 영역 (DESIGN_MANUS_F §6-B Draft-first).
+  const applicableWhen = {
+    scope_id: scope || null
+  };
 
   return {
     id: `lesson-${safeTask.taskId || 'unknown'}`,

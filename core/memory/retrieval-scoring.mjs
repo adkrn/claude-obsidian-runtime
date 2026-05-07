@@ -75,16 +75,144 @@ export function jaccardSimilarity(left, right) {
   return intersectionSize / unionSize;
 }
 
+// ── applicable_when retrieval gate (DESIGN_MANUS_F §4) ─────────────
+
+function escapeRegexLiteral(ch) {
+  return ch.replace(/[.+^$()|[\]{}\\]/g, '\\$&');
+}
+
+/**
+ * minimatch-compatible subset (no external dep). Supports:
+ *   - `*`   : any chars except `/`
+ *   - `**`  : any chars including `/` (also matches zero segments)
+ *   - `?`   : single char except `/`
+ * Forward-slash paths only — caller normalizes.
+ */
+export function globMatch(pattern, candidatePath) {
+  if (typeof pattern !== 'string' || typeof candidatePath !== 'string') return false;
+  if (pattern.length === 0) return false;
+  let regex = '';
+  for (let i = 0; i < pattern.length; i += 1) {
+    const ch = pattern[i];
+    if (ch === '*') {
+      if (pattern[i + 1] === '*') {
+        regex += '.*';
+        i += 1;
+      } else {
+        regex += '[^/]*';
+      }
+    } else if (ch === '?') {
+      regex += '[^/]';
+    } else {
+      regex += escapeRegexLiteral(ch);
+    }
+  }
+  const re = new RegExp(`^${regex}$`);
+  return re.test(candidatePath);
+}
+
+function toLowerSet(arr) {
+  const out = new Set();
+  if (!Array.isArray(arr)) return out;
+  for (const v of arr) {
+    if (typeof v !== 'string') continue;
+    const t = v.trim().toLowerCase();
+    if (t.length > 0) out.add(t);
+  }
+  return out;
+}
+
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+/**
+ * Evaluate the structured `applicable_when` gate (F §4-B).
+ *
+ * Returns { passed, evaluated, failedGates [, legacyString] }.
+ *
+ *   - applicable_when undefined/null/empty-string → passed=true
+ *   - non-empty legacy string                     → passed=true, legacyString=true
+ *   - non-object/array/etc                        → passed=true (defensive)
+ *   - object with sub-fields                      → AND across defined sub-fields
+ */
+export function evaluateGate(item, ctx = {}) {
+  const raw = item && typeof item === 'object' ? item.applicable_when : undefined;
+  if (raw === undefined || raw === null) {
+    return { passed: true, evaluated: [], failedGates: [] };
+  }
+  if (typeof raw === 'string') {
+    if (raw === '') return { passed: true, evaluated: [], failedGates: [] };
+    return { passed: true, evaluated: [], failedGates: [], legacyString: true };
+  }
+  if (!isPlainObject(raw)) {
+    return { passed: true, evaluated: [], failedGates: [] };
+  }
+
+  const candidatePaths = Array.isArray(ctx.candidatePaths) ? ctx.candidatePaths : [];
+  const signalTokenSet = toLowerSet(ctx.signalTokens);
+  const activeScopeSet = new Set(
+    (Array.isArray(ctx.activeScopes) ? ctx.activeScopes : [])
+      .filter((s) => typeof s === 'string' && s.length > 0)
+  );
+
+  const evaluated = [];
+  const failed = [];
+
+  if (Array.isArray(raw.path_glob) && raw.path_glob.length > 0) {
+    evaluated.push('path_glob');
+    let ok = false;
+    for (const pattern of raw.path_glob) {
+      for (const p of candidatePaths) {
+        if (globMatch(pattern, p)) { ok = true; break; }
+      }
+      if (ok) break;
+    }
+    if (!ok) failed.push('path_glob');
+  }
+
+  if (Array.isArray(raw.trigger_keywords) && raw.trigger_keywords.length > 0) {
+    evaluated.push('trigger_keywords');
+    const tkSet = toLowerSet(raw.trigger_keywords);
+    let overlap = 0;
+    for (const t of tkSet) {
+      if (signalTokenSet.has(t)) { overlap += 1; break; }
+    }
+    if (overlap < 1) failed.push('trigger_keywords');
+  }
+
+  const scopeIdRaw = raw.scope_id;
+  const scopeIds = Array.isArray(scopeIdRaw)
+    ? scopeIdRaw.filter((s) => typeof s === 'string' && s.length > 0)
+    : (typeof scopeIdRaw === 'string' && scopeIdRaw.length > 0 ? [scopeIdRaw] : []);
+  if (scopeIds.length > 0) {
+    evaluated.push('scope_id');
+    let ok = false;
+    for (const id of scopeIds) {
+      if (activeScopeSet.has(id)) { ok = true; break; }
+    }
+    if (!ok) failed.push('scope_id');
+  }
+
+  return { passed: failed.length === 0, evaluated, failedGates: failed };
+}
+
 /**
  * @param {object} item
  *   - importance: number (1..10)
  *   - last_accessed_at: ISO-8601 string
  *   - tokens: string[]
+ *   - applicable_when?: object | string | null  (F §4-A)
  * @param {object} ctx
  *   - promptTokens: string[]
  *   - weights?: { alphaRecency, alphaImportance, alphaRelevance, decayRatePerDay }
  *   - now?: Date (test injection)
- * @returns {number} score
+ *   - candidatePaths?: string[]   (F §5-B)
+ *   - signalTokens?: string[]     (F §5-B; defaults to promptTokens)
+ *   - activeScopes?: string[]     (F §5-B)
+ *   - gateMode?: 'exclude' | 'penalty'  (F §5-C; default 'exclude')
+ *   - gatePenalty?: number        (F §5-C; default 0.1, only when gateMode='penalty')
+ * @returns {number} score, or -Infinity when gate excludes
  */
 export function scoreItem(item, ctx = {}) {
   if (!item || typeof item !== 'object') return 0;
@@ -97,11 +225,25 @@ export function scoreItem(item, ctx = {}) {
   const importance = importanceScore(item.importance);
   const relevance = jaccardSimilarity(promptTokens, itemTokens);
 
-  return (
+  const rawScore = (
     weights.alphaRecency * recency +
     weights.alphaImportance * importance +
     weights.alphaRelevance * relevance
   );
+
+  const gateCtx = {
+    candidatePaths: Array.isArray(ctx.candidatePaths) ? ctx.candidatePaths : [],
+    signalTokens: Array.isArray(ctx.signalTokens) ? ctx.signalTokens : promptTokens,
+    activeScopes: Array.isArray(ctx.activeScopes) ? ctx.activeScopes : []
+  };
+  const result = evaluateGate(item, gateCtx);
+  if (result.passed) return rawScore;
+
+  if (ctx.gateMode === 'penalty') {
+    const penalty = Number.isFinite(ctx.gatePenalty) ? ctx.gatePenalty : 0.1;
+    return rawScore * penalty;
+  }
+  return -Infinity;
 }
 
 /**
