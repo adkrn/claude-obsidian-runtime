@@ -82,7 +82,13 @@
       "Read(//c/UnityProject/Pas62Ctr/ServerKey/**)",
       "Bash(where /r C:\\\\Users\\\\adkrn\\\\.claude\\\\plans MANUS_S4_4BAG*)",
       "Bash(dir C:\\\\Users\\\\adkrn\\\\.claude\\\\plans /B)",
-      "Bash(findstr /I \"DESIGN_MANUS\")"
+      "Bash(findstr /I \"DESIGN_MANUS\")",
+      "Bash(ls 08_Lessons/)",
+      "Bash(ls templates/vault/08_Lessons/)",
+      "Bash(head -20 commands/__tests__/session-isolation.test.mjs)",
+      "Bash(find 08_Lessons -type f)",
+      "Bash(find templates/vault/08_Lessons -type f)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\adkrn\\.claude\\plans",
