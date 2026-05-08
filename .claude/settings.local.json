@@ -109,7 +109,35 @@
       "PowerShell(Receive-Job -Keep -ErrorAction SilentlyContinue 2>$null)",
       "Read(//c/UnityProject/AresParSimVR/**)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:developers.meta.com)"
+      "WebFetch(domain:developers.meta.com)",
+      "PowerShell($root = \"C:\\\\UnityProject\\\\AresParSimVR\"; if \\(-not \\(Test-Path $root\\)\\) { Write-Host \"ROOT_MISSING\"; exit }; Get-ChildItem $root -Force | Select-Object Mode,Name | Format-Table -AutoSize | Out-String; if \\(Test-Path \"$root\\\\ProjectSettings\\\\ProjectVersion.txt\"\\) { Get-Content \"$root\\\\ProjectSettings\\\\ProjectVersion.txt\" } else { Write-Host \"NO_PROJECT_VERSION\" }; if \\(Test-Path \"$root\\\\Packages\\\\manifest.json\"\\) { Get-Content \"$root\\\\Packages\\\\manifest.json\" -Raw | Select-Object -First 1 } else { Write-Host \"NO_MANIFEST\" })",
+      "Bash(echo \"smoke test marker - mirror only\" > \"c:/JSProj/talkSim/document/obsidian_context/07_Decisions/__quarantine_smoke__.md\" && ls \"c:/JSProj/talkSim/document/obsidian_context/07_Decisions/__quarantine_smoke__.md\")",
+      "Bash(rm -rf \"c:/JSProj/talkSim/document/obsidian_context/_quarantine\" && echo \"cleaned\")",
+      "WebFetch(domain:opentelemetry.io)",
+      "WebFetch(domain:openai.github.io)",
+      "WebFetch(domain:python.langchain.com)",
+      "WebFetch(domain:microsoft.github.io)",
+      "Bash(env)",
+      "Bash(python -c \"import sys,json; t=json.load\\(sys.stdin\\); print\\('sessionIds:', t.get\\('sessionIds'\\)\\); print\\('source:', t.get\\('source'\\)\\); print\\('createdAt:', t.get\\('createdAt'\\)\\)\")",
+      "Bash(find c:/UnityProject -maxdepth 3 -name \"*ontingency*\" 2>/dev/null | head -10; find c:/JSProj -maxdepth 4 -name \"*ontingency*\" 2>/dev/null | head -10)",
+      "Read(//c/UnityProject/**)",
+      "Bash(python -c \"import sys,json; t=json.load\\(sys.stdin\\); print\\('sessionIds:', t.get\\('sessionIds'\\)\\)\")",
+      "Bash(rm c:/JSProj/talkSim/.claude/runtime/tasks/20260508-1158-patch_verification_probe_delete_.json c:/JSProj/talkSim/.claude/runtime/current-task-VERIFY-1778209107.json 2>&1; echo \"cleaned\")",
+      "Bash(jq --version)",
+      "Bash(python -c ' *)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" status --short)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" log --oneline -20)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" diff --stat HEAD~10 HEAD -- docs/ templates/ *.md)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" log --oneline --name-only -1 62100de 19c1c2c e39b7de a4a3813 3fe72c8 992094e 84effc8 4bc81e6 4cdc502 e4fad9f)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" log --since=\"2026-04-01\" --pretty=format:\"%h %ad %s\" --date=short -- HANDOFF.md PRINCIPLES.md docs/)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" diff --stat)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" status)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" remote -v)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" branch -vv)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" diff templates/agents/_lead.md templates/commands/agents-bootstrap.md templates/commands/task-close.md templates/commands/task-start.md)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" diff templates/hooks/runtime-session-end.sh templates/hooks/runtime-stop.sh)",
+      "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" diff .claude/settings.local.json)",
+      "Bash(git rm *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\adkrn\\.claude\\plans",
@@ -117,7 +145,11 @@
       "\\tmp",
       "c:\\JSProj\\talkSim\\.claude",
       "C:\\Users\\adkrn",
-      "c:\\JSProj\\magicDraft\\.claude"
+      "c:\\JSProj\\magicDraft\\.claude",
+      "c:\\JSProj\\talkSim\\document\\obsidian_context\\07_Decisions",
+      "c:\\JSProj\\talkSim\\document\\obsidian_context\\_quarantine",
+      "C:\\UnityProject\\AresParSimVR\\.claude",
+      "c:\\JSProj\\talkSim\\.claude\\runtime\\tasks"
     ]
   }
 }
