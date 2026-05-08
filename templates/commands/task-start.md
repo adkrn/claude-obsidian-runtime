@@ -2,7 +2,7 @@
 
 다음 순서로 진행하세요.
 
-1. `node "$CLAUDE_RUNTIME_HOME/commands/task-start.mjs" --task "$ARGUMENTS" --session-id "$SESSION_ID"` 를 실행합니다.
+1. `node "$CLAUDE_RUNTIME_HOME/commands/task-start.mjs" --task "$ARGUMENTS" --session-id "${CLAUDE_SESSION_ID}"` 를 실행합니다.
 2. 출력된 `taskId`, `readFirst`, `knowledgeHits`, `codeHits`, `guardrails`를 확인합니다.
 3. `readFirst`와 `knowledgeHits`에 나온 노트를 먼저 읽고, `codeHits` 상위 경로를 읽어 변경 표면을 줄입니다.
 4. multi-file 작업이거나 설계 판단이 필요한 경우, `taskId`를 기준으로 짧은 plan을 먼저 작성합니다.

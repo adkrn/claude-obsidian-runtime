@@ -2,7 +2,7 @@
 
 다음 순서로 진행하세요.
 
-1. `node "$CLAUDE_RUNTIME_HOME/commands/session-end.mjs" --close --session-id "$SESSION_ID"` 를 실행합니다.
+1. `node "$CLAUDE_RUNTIME_HOME/commands/session-end.mjs" --close --session-id "${CLAUDE_SESSION_ID}"` 를 실행합니다.
 2. 출력된 worklog, 생성된 lesson/decision/troubleshooting 초안, architecture generated 문서 요약을 확인합니다.
 3. `recommendation: promote`가 보이면 `/architecture-promote`로 정식 문서 승격을 검토합니다.
 
