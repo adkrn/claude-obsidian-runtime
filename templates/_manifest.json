@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "packageVersion": "3.3.4",
-  "generatedAt": "2026-05-07T09:06:05.068Z",
+  "generatedAt": "2026-05-08T08:51:20.109Z",
   "generator": "scripts/build-template-manifest.mjs",
   "files": [
     {
@@ -12,8 +12,8 @@
     },
     {
       "relPath": "agents/_lead.md",
-      "sha256": "022986d7d318dea3b7de6525d081ccb2ddb463e233fc7984a1e9278760725047",
-      "size": 15303,
+      "sha256": "74c4804ff825b9e1d1bf2588348935995aa43e48cc1ee7bc3c004f3a607f11cc",
+      "size": 15509,
       "required": true
     },
     {
@@ -77,6 +77,42 @@
       "required": false
     },
     {
+      "relPath": "agents/_recommended/unity/addressables-strategist.md",
+      "sha256": "0b6537f42d8d057fae8ae9f25c6bb46e27e94aeefa65c7637cddefae8f4ff36c",
+      "size": 3863,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/unity/csharp-reviewer.md",
+      "sha256": "b8a52b4ceff61cf1a54801b553548aedc6360afc6134767f2f0736272e98ea79",
+      "size": 4365,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/unity/repo-hygienist.md",
+      "sha256": "33911b81c16c347d6324cfd6eb1de0d31f163140b4db9b2f488bac6a5b17512f",
+      "size": 3880,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/unity/scene-reviewer.md",
+      "sha256": "ed2ca8fa3bccbe9db6149eb65a20bf3865a5292c9ea7c2bc1d3413e78a18ea4e",
+      "size": 3789,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/unity/unity-docs-writer.md",
+      "sha256": "763413d23eabdafc6c860495573d1ce4ba921b7791ff587eb97c556d6b4333f1",
+      "size": 3514,
+      "required": false
+    },
+    {
+      "relPath": "agents/_recommended/unity/unity-test-writer.md",
+      "sha256": "9c3a68f4007fcd1d8e3db03fa5aef65c73659a24ca7399006cce792c0399d4ae",
+      "size": 3705,
+      "required": false
+    },
+    {
       "relPath": "agents/_recommended/web/api-designer.md",
       "sha256": "040c1d1a777fc86007fff406c1643c04f90a7d308f1f2d91440558e5602ec0ef",
       "size": 2628,
@@ -96,8 +132,8 @@
     },
     {
       "relPath": "commands/agents-bootstrap.md",
-      "sha256": "1ba668b37130d1528ff07694eaa2086d2f58e16b85301c604ecc289db48f1f9c",
-      "size": 5462,
+      "sha256": "b4222c92bc344c0fb5a96db5cf15470d57f64cdab44dabc11639e80986b30c49",
+      "size": 6044,
       "required": false
     },
     {
@@ -132,14 +168,14 @@
     },
     {
       "relPath": "commands/task-close.md",
-      "sha256": "9fba07bb317aabf4520de69cd44b134628d345a5feb13ea7ebcc11914a7a56c4",
-      "size": 708,
+      "sha256": "13e40283abff544ee3816822498990b88498fc652624884873c18d5a50304d95",
+      "size": 717,
       "required": false
     },
     {
       "relPath": "commands/task-start.md",
-      "sha256": "ed365fd82f809128559ae1f74f338387c4ac70eba97ce86a470c6a17b93ee536",
-      "size": 1093,
+      "sha256": "6395818ffea0887a07c1dcba57c7b97793944e877c6ce737dd45f1dcb320b2d5",
+      "size": 1102,
       "required": false
     },
     {
@@ -174,8 +210,8 @@
     },
     {
       "relPath": "hooks/runtime-session-end.sh",
-      "sha256": "4afffec29d5fd954ba82be4646f4d9b2145103ca9a356589006db6260abeb727",
-      "size": 270,
+      "sha256": "57a0ed4d406ec563086b4cc8add528577ce962ffa4ff1b7e4fdeabe942b30a50",
+      "size": 242,
       "required": true
     },
     {
@@ -186,8 +222,8 @@
     },
     {
       "relPath": "hooks/runtime-stop.sh",
-      "sha256": "504074a76b9bf900a4f77ee4e6b12f99c24578c9094426366a34212300eca6e9",
-      "size": 263,
+      "sha256": "a1af2f77e86eaafaefc556233e18833f2e0409851631ac3b18cc0f6df72ca3d4",
+      "size": 235,
       "required": true
     },
     {
@@ -221,6 +257,12 @@
       "required": true
     },
     {
+      "relPath": "vault/00_Home/Current_Todo.md",
+      "sha256": "d7822c8a801f39d994f7bed73fcfc83a22e78a30aaa0a68ce768b812154b8e02",
+      "size": 264,
+      "required": true
+    },
+    {
       "relPath": "vault/00_Home/Reading_Order.md",
       "sha256": "25691650b8b4a8e075b47a4b0a6f4372e6d5615f79fe1d11aa16ba0c6bd23460",
       "size": 357,
@@ -239,5 +281,5 @@
       "required": false
     }
   ],
-  "rootFingerprint": "26f2544028b34b6f29a2708186cd88faa3163851f57f456f59aa8327246915c2"
+  "rootFingerprint": "45d73356acc8a67b469d6c4954eb831905f05f5f87f8d6bdf141e5e19d49fa09"
 }
