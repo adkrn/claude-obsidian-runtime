@@ -12,6 +12,144 @@ const DEFAULT_PRUNE = () => ({ removedArchitectures: [], deletedDocs: [], update
 
 const DEFAULT_SYNC_CACHE_TTL_MS = 5 * 60 * 1000;
 
+const QUARANTINE_DIR_NAME = '_quarantine';
+const DEFAULT_QUARANTINE_TTL_DAYS = 7;
+const DEFAULT_PRUNE_WARN_BYTES = 2048;
+
+function quarantineRoot(contextRoot) {
+  return path.join(contextRoot, QUARANTINE_DIR_NAME);
+}
+
+function todayStamp(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function timeSuffix(date = new Date()) {
+  const h = String(date.getHours()).padStart(2, '0');
+  const m = String(date.getMinutes()).padStart(2, '0');
+  const s = String(date.getSeconds()).padStart(2, '0');
+  return `${h}${m}${s}`;
+}
+
+function quarantineWarnBytes() {
+  const raw = Number(process.env.OBSIDIAN_PRUNE_WARN_BYTES);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_PRUNE_WARN_BYTES;
+}
+
+function quarantineTtlMs() {
+  const raw = Number(process.env.OBSIDIAN_QUARANTINE_TTL_DAYS);
+  const days = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_QUARANTINE_TTL_DAYS;
+  return days * 24 * 60 * 60 * 1000;
+}
+
+// Move a single file into <contextRoot>/_quarantine/<YYYY-MM-DD>/<root>/<relPath>.
+// Falls back to copy+rm when rename crosses volumes. Returns { quarantinedPath, bytes }.
+function moveFileToQuarantine(contextRoot, sourceAbsPath, mirrorRelativePath, now = new Date()) {
+  const baseDir = path.join(quarantineRoot(contextRoot), todayStamp(now));
+  let destPath = path.join(baseDir, mirrorRelativePath);
+  ensureDir(path.dirname(destPath));
+
+  if (fs.existsSync(destPath)) {
+    const ext = path.extname(destPath);
+    const stem = destPath.slice(0, destPath.length - ext.length);
+    destPath = `${stem}.${timeSuffix(now)}${ext}`;
+  }
+
+  let bytes = 0;
+  try {
+    bytes = fs.statSync(sourceAbsPath).size;
+  } catch {
+    bytes = 0;
+  }
+
+  try {
+    fs.renameSync(sourceAbsPath, destPath);
+  } catch {
+    // Cross-device or locked: fall back to copy + remove.
+    fs.copyFileSync(sourceAbsPath, destPath);
+    fs.rmSync(sourceAbsPath, { force: true });
+  }
+
+  return { quarantinedPath: destPath, bytes };
+}
+
+// Move a whole directory into quarantine. Same date/conflict rules as moveFileToQuarantine.
+function moveDirToQuarantine(contextRoot, sourceAbsDir, mirrorRelativePath, now = new Date()) {
+  const baseDir = path.join(quarantineRoot(contextRoot), todayStamp(now));
+  let destPath = path.join(baseDir, mirrorRelativePath);
+  ensureDir(path.dirname(destPath));
+
+  if (fs.existsSync(destPath)) {
+    destPath = `${destPath}.${timeSuffix(now)}`;
+  }
+
+  try {
+    fs.renameSync(sourceAbsDir, destPath);
+  } catch {
+    // Best-effort recursive copy fallback. Node 16+ supports cpSync.
+    if (typeof fs.cpSync === 'function') {
+      fs.cpSync(sourceAbsDir, destPath, { recursive: true });
+    } else {
+      ensureDir(destPath);
+      for (const entry of fs.readdirSync(sourceAbsDir, { withFileTypes: true })) {
+        const childSrc = path.join(sourceAbsDir, entry.name);
+        const childDest = path.join(destPath, entry.name);
+        if (entry.isDirectory()) {
+          moveDirToQuarantine(destPath, childSrc, entry.name, now);
+        } else {
+          fs.copyFileSync(childSrc, childDest);
+        }
+      }
+    }
+    fs.rmSync(sourceAbsDir, { recursive: true, force: true });
+  }
+
+  return { quarantinedPath: destPath };
+}
+
+// Purge entries under _quarantine whose mtime is older than the configured TTL.
+function purgeExpiredQuarantine(contextRoot, now = Date.now()) {
+  const root = quarantineRoot(contextRoot);
+  if (!fs.existsSync(root)) return;
+  const ttlMs = quarantineTtlMs();
+  const cutoff = now - ttlMs;
+
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      let stat;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        walk(full);
+        try {
+          if (fs.readdirSync(full).length === 0 && stat.mtimeMs < cutoff) {
+            fs.rmdirSync(full);
+          }
+        } catch {
+          // ignore
+        }
+      } else if (stat.mtimeMs < cutoff) {
+        try { fs.rmSync(full, { force: true }); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  walk(root);
+}
+
 export function normalizePathValue(value) {
   return String(value || '')
     .replace(/\\/g, '/')
@@ -62,16 +200,20 @@ function isExcludedMirrorPath(relativePath, excludedRoots) {
   );
 }
 
-function cleanupExcludedMirrorRoots(contextRoot, excludedRoots) {
+function cleanupExcludedMirrorRoots(contextRoot, excludedRoots, now = new Date()) {
   for (const root of excludedRoots) {
     if (!root) {
+      continue;
+    }
+    if (root === QUARANTINE_DIR_NAME) {
+      // Never quarantine the quarantine directory itself.
       continue;
     }
 
     const targetPath = path.join(contextRoot, root);
     try {
       if (fs.existsSync(targetPath)) {
-        fs.rmSync(targetPath, { recursive: true, force: true });
+        moveDirToQuarantine(contextRoot, targetPath, root, now);
       }
     } catch {
       // best effort cleanup only
@@ -175,6 +317,10 @@ export function syncManagedRoots(projectDir, config, options = {}) {
   const { contextRoot, managedRoots, mirrorExcludeRoots } = getMirrorSettings(config);
   const summary = [];
   const removedArchitectureProfiles = [];
+  const quarantineWarnings = [];
+  const warnByteThreshold = quarantineWarnBytes();
+  const now = new Date();
+  let totalQuarantined = 0;
 
   try {
     ensureDir(contextRoot);
@@ -186,6 +332,7 @@ export function syncManagedRoots(projectDir, config, options = {}) {
       const sourceRelativePaths = new Set();
       let copied = 0;
       let removed = 0;
+      let quarantined = 0;
 
       ensureDir(targetRoot);
 
@@ -213,6 +360,7 @@ export function syncManagedRoots(projectDir, config, options = {}) {
         const isExcluded = isExcludedMirrorPath(mirrorRelativePath, mirrorExcludeRoots);
         const isMissingFromSource = !sourceRelativePaths.has(relativePath);
         if (isExcluded || isMissingFromSource) {
+          // Capture architecture profile content BEFORE the move; rename invalidates the path.
           if (
             root === '04_Architecture' &&
             isMissingFromSource &&
@@ -223,7 +371,14 @@ export function syncManagedRoots(projectDir, config, options = {}) {
               content: fs.readFileSync(targetFile, 'utf8')
             });
           }
-          fs.rmSync(targetFile, { force: true });
+          const { bytes } = moveFileToQuarantine(contextRoot, targetFile, mirrorRelativePath, now);
+          if (bytes > warnByteThreshold) {
+            const warnLine = `[obsidian-sync][warn] large prune candidate: ${mirrorRelativePath} (${bytes} bytes) -> quarantined`;
+            try { process.stderr.write(`${warnLine}\n`); } catch { /* ignore */ }
+            quarantineWarnings.push({ relativePath: mirrorRelativePath, bytes });
+          }
+          quarantined += 1;
+          totalQuarantined += 1;
           removed += 1;
         }
       }
@@ -232,16 +387,29 @@ export function syncManagedRoots(projectDir, config, options = {}) {
         root,
         copied,
         removed,
+        quarantined,
         sourceCount: sourceRelativePaths.size,
         sourcePath: sourceRoot,
         targetPath: targetRoot
       });
     }
 
-    cleanupExcludedMirrorRoots(contextRoot, mirrorExcludeRoots);
+    cleanupExcludedMirrorRoots(contextRoot, mirrorExcludeRoots, now);
+
+    purgeExpiredQuarantine(contextRoot);
 
     const prune = pruneCallback(projectDir, config, removedArchitectureProfiles);
-    const result = { ok: true, message: 'ok', summary, prune };
+    const result = {
+      ok: true,
+      message: 'ok',
+      summary,
+      prune,
+      quarantine: {
+        dir: quarantineRoot(contextRoot),
+        movedCount: totalQuarantined,
+        warnings: quarantineWarnings
+      }
+    };
     if (useCache) {
       writeSyncCache(projectDir, result);
     }

@@ -24,6 +24,7 @@ const DEFAULT_MCP_ROOTS = [
 ];
 
 const DEFAULT_MIRROR_EXCLUDE_ROOTS = [
+  '_quarantine',
   '04_Architecture/Drafts',
   '04_Architecture/Generated',
   '07_Decisions/Drafts',
