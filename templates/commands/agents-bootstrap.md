@@ -76,3 +76,4 @@
 - `projectKinds`가 `["unknown"]` 인 프로젝트: "unknown 유형에는 권장 템플릿이 없어요. 유형을 구체화하고 싶으면 `.claude/runtime-manifest.json`의 `projectKinds`를 편집해 주세요."
 - 기존 P0 프로젝트 (lead만 있음): 그대로 실행 가능. lead는 건드리지 않습니다.
 - `--kind library` 또는 `--kind data` (P1 범위 밖): "kind `<kind>` 는 P2에서 제공돼요." 안내 후 종료.
+- `--kind unity`: 필수 6개(`csharp-reviewer`, `unity-test-writer`, `scene-reviewer`, `addressables-strategist`, `repo-hygienist`, `unity-docs-writer`) 를 install 후보로 제시한다. 옵션 카탈로그(URP/XR/Netcode/Profiler) 는 P1 추가 예정 — 현재는 미지원이므로 dry-run 출력에 "옵션 에이전트는 추후 추가 예정" 한 줄 안내. `_common/test-writer.md` 는 `unity-test-writer` 와 역할이 겹치므로 unity kind 에서는 **합집합 대상에서 제외**한다 (web/cli kind 와 hybrid 일 때만 web/cli 쪽에서 자동 합쳐진다).

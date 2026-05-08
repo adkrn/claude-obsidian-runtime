@@ -134,12 +134,13 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 - **발동 조건**: `.claude/runtime-manifest.json`의 `projectKinds`가 `[]` (빈 배열)이거나 키 부재인 첫 세션.
 - **종료 조건**: 사용자가 1회 이상 응답 완료 → `projectKinds`에 최소 1개 값 기록됨. 이후 같은 세션·다음 세션에서 재트리거 금지.
 - **질문 템플릿** (사용자에게 그대로 제시):
-  > "이 프로젝트 유형을 알려주세요. 복수 선택 가능합니다. 목록: web / cli / data / library / unknown."
+  > "이 프로젝트 유형을 알려주세요. 복수 선택 가능합니다. 목록: web / cli / data / library / unity / unknown."
 - **제시만**: 유형별 권장 에이전트 목록을 제시한다. 실제 설치·파일 생성 금지 (P1 `/agents-bootstrap`).
   - `web` → frontend-reviewer, api-designer, docs-writer, test-writer (제안 텍스트만)
   - `cli` → cli-designer, docs-writer, test-writer
   - `data` → data-schema-reviewer, migration-writer
   - `library` → api-designer, docs-writer, test-writer
+  - `unity` → csharp-reviewer, unity-test-writer, scene-reviewer, addressables-strategist, repo-hygienist, unity-docs-writer (Unity 6+ / URP·XR·Netcode 옵션 카탈로그는 P1 추가 예정)
   - `unknown` → 제안 없음. 다음 세션에서 다시 물어보지 않음 (재질문 조건은 사용자가 수동으로 `projectKinds=[]`로 초기화 시).
 - **기록 경로**: 사용자 응답을 받은 lead가 `.claude/runtime-manifest.json`의 `projectKinds` 필드를 **사용자 승인 후** Write로 갱신. 승인 전 자동 편집 금지.
 - **Forgetting과 무관**: `projectKinds`는 session-level 상태가 아니라 manifest 영속 필드. 재질문은 사용자가 명시적으로 초기화할 때만.
