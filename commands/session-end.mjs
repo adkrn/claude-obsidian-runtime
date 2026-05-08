@@ -62,6 +62,7 @@ import {
   reflectionDraftRelativePath,
   resolveVerifyOptions
 } from '../core/task-close-verify.mjs';
+import { carryOverAndReset } from '../core/todo-writer.mjs';
 
 function writeToVault(projectDir, relativePath, content, config) {
   return writeVaultArtifact({
@@ -401,6 +402,15 @@ async function main() {
       },
       verify: verifyOutcome
     });
+
+    // DESIGN_MANUS_AG §6-C — carry-over unfinished todo items onto the
+    // worklog and reset Current_Todo.md to the no-active-task body. Runs
+    // even when verify fails (worklog still produced). Silent on no-vault.
+    try {
+      const vaultRoot = obsidianConfig?.vaultAvailable ? obsidianConfig.vaultRoot : '';
+      const worklogPath = worklogResult?.worklog?.path || '';
+      carryOverAndReset(projectDir, vaultRoot, taskRecord, worklogPath);
+    } catch { /* non-critical */ }
 
     // §5-A — prepend unverified badge to whatever worklog markdown the
     // project-local generator returned. Done here (shared layer) so

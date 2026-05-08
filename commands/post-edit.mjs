@@ -27,6 +27,7 @@ import {
 } from '../core/learning-capture.mjs';
 import { loadObsidianConfig } from '../core/obsidian-config.mjs';
 import { readStdinJson } from '../core/utils.mjs';
+import { autoCheckTodoOnPostTool } from '../core/todo-writer.mjs';
 
 function loadManifestConfig(projectDir) {
   const manifestPath = path.join(projectDir, '.claude', 'runtime-manifest.json');
@@ -107,6 +108,8 @@ async function main() {
         process.stdout.write(`${JSON.stringify(readResult)}\n`);
       }
     }
+    // DESIGN_MANUS_AG §6-B — auto-check Current_Todo.md on Read events too.
+    try { autoCheckTodoOnPostTool(projectDir, input); } catch { /* non-critical */ }
     process.exit(0);
   }
 
@@ -159,6 +162,10 @@ async function main() {
   if (result.ok) {
     process.stdout.write(JSON.stringify(result) + '\n');
   }
+
+  // DESIGN_MANUS_AG §6-B — auto-check Current_Todo.md after Edit/Write events.
+  // Silent on no-vault, no-match, or any failure (never blocks the hook).
+  try { autoCheckTodoOnPostTool(projectDir, input); } catch { /* non-critical */ }
 }
 
 const currentFilePath = fileURLToPath(import.meta.url);

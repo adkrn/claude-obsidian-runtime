@@ -35,6 +35,8 @@ import {
 } from '../core/context-resolver.mjs';
 import { applyMMR, emitSortByPath } from '../core/memory/mmr.mjs';
 import { scoreItems } from '../core/memory/retrieval-scoring.mjs';
+import { generateInitialTodoList, writeTodoFile } from '../core/todo-writer.mjs';
+import { loadObsidianConfig } from '../core/obsidian-config.mjs';
 
 // ── DESIGN_MANUS_C §6-B-1 — lesson MMR pipeline ─────────────────
 
@@ -245,6 +247,23 @@ export function runTaskStart(argv) {
     resolveContext: defaultResolveContext,
     defaultScope: 'repo',
     afterWrite: ({ projectDir, sessionId, taskRecord, taskFilePath, runtimePaths }) => {
+      // DESIGN_MANUS_AG §6-A — emit Current_Todo.md from initial readFirst.
+      // Silent skip when vault is unavailable; task creation still succeeds.
+      try {
+        const obsidianCfg = loadObsidianConfig(projectDir);
+        const vaultRoot = obsidianCfg?.vaultAvailable ? obsidianCfg.vaultRoot : '';
+        const initialTodos = generateInitialTodoList(
+          taskRecord,
+          taskRecord.readFirst || [],
+          taskRecord.matchedScopes || []
+        );
+        writeTodoFile(projectDir, vaultRoot, {
+          taskId: taskRecord.taskId,
+          title: taskRecord.title || taskRecord.prompt || '',
+          items: initialTodos
+        });
+      } catch { /* non-critical: never block task creation */ }
+
       // Bind the new task to this session so SessionStart on a different
       // session can't accidentally claim or close it via the global pointer.
       if (!sessionId) return;

@@ -138,7 +138,17 @@ function normalizeLesson(lesson) {
  *   - evolutionEnabled?: boolean (default true)
  *   - evolutionThreshold?: number (default 0.7)
  *   - evolutionTopN?: number (default 3)
- * @returns {{ ok: true, lessonId: string, evolved: Array<{lessonId,proposal}> }}
+ *   - lessonPathResolver?: (lessonId) => string  // §7-B safeguard hook
+ *   - persistLesson?: (lesson) => void           // caller's md write fn
+ *   - onSafeguardEvent?: (eventType, payload) => void
+ *   - buildReflectionDraft?: (task) => object|null
+ *   - writeReflectionDraft?: (draft, task) => string|null
+ * @returns {{
+ *   ok: true,
+ *   lessonId: string,
+ *   evolved: Array<{lessonId,proposal}>,
+ *   safeguardResults?: object[]
+ * }}
  */
 export function upsertLesson(projectDir, lesson, options = {}) {
   const normalized = normalizeLesson(lesson);
@@ -146,12 +156,27 @@ export function upsertLesson(projectDir, lesson, options = {}) {
   const idx = all.findIndex((row) => row?.id === normalized.id);
 
   let evolved = [];
+  let safeguardResults = null;
   if (options.evolutionEnabled !== false && idx === -1) {
-    evolved = evolveAgainst(normalized, all, {
+    const evolveOpts = {
       threshold: options.evolutionThreshold,
       topN: options.evolutionTopN,
       nowIso: normalized.updated_at
-    });
+    };
+    if (typeof options.lessonPathResolver === 'function') {
+      evolveOpts.lessonPathResolver = options.lessonPathResolver;
+      evolveOpts.persistLesson = options.persistLesson;
+      evolveOpts.onSafeguardEvent = options.onSafeguardEvent;
+      evolveOpts.buildReflectionDraft = options.buildReflectionDraft;
+      evolveOpts.writeReflectionDraft = options.writeReflectionDraft;
+    }
+    const result = evolveAgainst(normalized, all, evolveOpts);
+    if (Array.isArray(result)) {
+      evolved = result;
+    } else {
+      evolved = result.updated || [];
+      safeguardResults = result.safeguardResults || [];
+    }
   }
 
   if (idx === -1) {
@@ -171,7 +196,9 @@ export function upsertLesson(projectDir, lesson, options = {}) {
 
   persistAllLessons(projectDir, all);
 
-  return { ok: true, lessonId: normalized.id, evolved };
+  const out = { ok: true, lessonId: normalized.id, evolved };
+  if (safeguardResults) out.safeguardResults = safeguardResults;
+  return out;
 }
 
 /**
