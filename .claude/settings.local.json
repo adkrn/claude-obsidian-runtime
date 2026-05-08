@@ -100,7 +100,16 @@
       "Bash(where /r C:\\\\Users\\\\adkrn\\\\.claude\\\\plans MANUS_S3*.md)",
       "Bash(where /r C:\\\\Users\\\\adkrn\\\\.claude\\\\plans IMPL-006A*.md)",
       "Bash(where /r c:\\\\JSProj\\\\claude-obsidian-runtime MANUS_S3*.md)",
-      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\adkrn\\\\.claude\\\\plans\" -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.Name -match \"MANUS|IMPL-006|S3|E4AH\"} | Select-Object FullName)"
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\adkrn\\\\.claude\\\\plans\" -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.Name -match \"MANUS|IMPL-006|S3|E4AH\"} | Select-Object FullName)",
+      "Bash(rm -rf \"C:/Users/adkrn/AppData/Local/Temp/manus-s3-verify-9jFWce\" \"C:/Users/adkrn/AppData/Local/Temp/manus-s3-verify-uCfuKb\" /tmp/s3-stderr.txt /tmp/s3-stdout.txt /tmp/s3-tmpdir.txt 2>&1 | head; cd c:/JSProj/claude-obsidian-runtime && rm -rf 08_Lessons && git status --short)",
+      "Bash(dir /s /b C:\\\\JSProj\\\\claude-obsidian-runtime\\\\*MANUS*)",
+      "Bash(findstr /i \"MANUS\")",
+      "Read(//c//**)",
+      "PowerShell(Get-Job)",
+      "PowerShell(Receive-Job -Keep -ErrorAction SilentlyContinue 2>$null)",
+      "Read(//c/UnityProject/AresParSimVR/**)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:developers.meta.com)"
     ],
     "additionalDirectories": [
       "C:\\Users\\adkrn\\.claude\\plans",
