@@ -1,6 +1,6 @@
 # 설치 가이드 (Install Guide)
 
-claude-obsidian-runtime v3.0.0 — Claude Code와 Obsidian을 연동해 프로젝트별 장기기억·학습축적·자동 문서화를 제공하는 공유 런타임.
+claude-obsidian-runtime v3.3.4 — Claude Code와 Obsidian을 연동해 프로젝트별 장기기억·학습축적·자동 문서화를 제공하는 공유 런타임.
 
 이 가이드는 **처음 쓰는 사람**이 0부터 첫 프로젝트를 설치할 때까지 따라할 수 있게 작성했어.
 
@@ -16,7 +16,8 @@ claude-obsidian-runtime v3.0.0 — Claude Code와 Obsidian을 연동해 프로�
 | Obsidian | 선택 (볼트 실사용 시 필요) | 앱 설치 |
 
 **권장**:
-- Claude Code v2.1.32+ (agent-teams 기능과 무관. 표준 hook만 사용)
+- Claude Code v2.1.32+ (표준 hook 만 사용. Agent Teams 기능과는 무관)
+- v2.1.128+ 에서는 hook 쉘에 `CLAUDE_SESSION_ID` 환경변수가 안 들어옴 → session-end / stop hook 이 의도적으로 비활성화 상태로 설치됨. 사용자는 세션 마무리에 `/task-close` slash 명령어를 직접 호출해야 함 (자세한 내용 [QUICKSTART.md](./QUICKSTART.md))
 - tmux (선택)
 
 ---
@@ -37,7 +38,7 @@ cd claude-obsidian-runtime
 **버전 확인**:
 ```bash
 node bin/cli.mjs version
-# → 3.0.0
+# → 3.3.4
 ```
 
 ### 2-B. 환경 변수 설정
@@ -84,7 +85,7 @@ npm link
 이후 아무 디렉토리에서나:
 ```bash
 claude-runtime version
-# → 3.0.0
+# → 3.3.4
 ```
 
 **스킵 가능**: 대신 `node $CLAUDE_RUNTIME_HOME/bin/cli.mjs <subcommand>` 형식으로 직접 호출해도 동일하게 동작.
@@ -102,8 +103,8 @@ node --test commands/__tests__/*.test.mjs core/__tests__/*.test.mjs core/memory/
 
 **기대 출력** (마지막 부분):
 ```
-ℹ tests 264
-ℹ pass 264
+ℹ tests 436
+ℹ pass 436
 ℹ fail 0
 ```
 
@@ -156,13 +157,14 @@ claude-runtime init \
 ### 4-D. init이 생성하는 것 (실제 파일 목록)
 
 **프로젝트 측 (`<projectDir>/.claude/`)**:
-- `.claude/runtime-manifest.json` — 프로젝트 매니페스트 (6축 + 확장 4축)
-- `.claude/agents/<projectId>-lead.md` — 총괄 에이전트 (`{{PROJECT_ID}}` 치환됨)
-- `.claude/commands/*.md` — slash 커맨드 템플릿 (task-start, task-close 등)
-- `.claude/hooks/*.sh` — 6 core shell wrapper (install-hooks가 생성)
-- `.claude/settings.json` — hook 등록 (install-hooks가 패치)
-- `.claude/runtime-version.json` — 설치된 런타임 버전 기록
-- `.claude/runtime/` 아래 7 subdir: `tasks/ events/ retrieval/ code-index/ knowledge/ architecture/ eval/`
+- `.claude/runtime-manifest.json` — 프로젝트 매니페스트 (6축 필수 + 확장 9축. 아래 4-F 참조)
+- `.claude/agents/<projectId>-lead.md` — 총괄 에이전트 (PM 역할. `{{PROJECT_ID}}` 치환됨)
+- `.claude/commands/*.md` — slash 커맨드 템플릿 8개 (`task-start`, `task-close`, `agents-bootstrap`, `reflection-run`, `architecture-promote`, `memory-refresh`, `obsidian-sync`, `obsidian-health`)
+- `.claude/hooks/*.sh` — 6개 shell wrapper. **활성 4개**: `runtime-session-start.sh`, `runtime-prompt-context.sh`, `runtime-subagent-start.sh`, `runtime-post-edit.sh`. **비활성 2개** (`runtime-session-end.sh`, `runtime-stop.sh`) — Claude Code v2.1.128+ 가 hook 쉘에 `CLAUDE_SESSION_ID` 를 안 넘겨서 자동 hook 으로는 안전하지 않음. 사용자가 `/task-close` slash 로 명시 종료
+- `.claude/settings.json` — hook 등록 (install-hooks 가 패치)
+- `.claude/settings.local.json` — `CLAUDE_RUNTIME_HOME` 자동 주입됨 (`84effc8` 부터)
+- `.claude/runtime-version.json` — 설치된 런타임 버전 기록 + manifest SHA256
+- `.claude/runtime/` 아래 8 subdir: `tasks/ events/ retrieval/ code-index/ knowledge/ architecture/ eval/` + `delegations.jsonl` (P2, lead 위임 로그)
 
 **프로젝트 측 (`<projectDir>/document/obsidian_context/_meta/`)**:
 - `obsidian_paths.json` — 볼트 경로 설정 (vaultRoot, managedRoots, indexTargets 등)
@@ -208,6 +210,7 @@ claude-obsidian-runtime init
 [install-hooks] Installed 6 shell scripts: runtime-session-start.sh, runtime-prompt-context.sh, runtime-subagent-start.sh, runtime-stop.sh, runtime-session-end.sh, runtime-post-edit.sh
 [install-hooks] settings.json patched: true
 [install-hooks] runtime-version.json written: true
+[install-hooks] settings.local.json: CLAUDE_RUNTIME_HOME injected
 
 Initialized project: myproject
   Created: N file(s)
@@ -215,7 +218,7 @@ Initialized project: myproject
 
   [doctor] Running doctor --full --since-init...
 claude-obsidian-runtime doctor
-Package:     v3.0.0
+Package:     v3.3.4
 Project:     /path/to/myProject
 Mode:        full (--since-init)
 
@@ -226,11 +229,11 @@ Summary: 12 pass, 0 warn, 0 fail
 
   [doctor] exit code 0
 
-Next steps:
-  1. export CLAUDE_RUNTIME_HOME="..."
-  2. Edit .claude/runtime-manifest.json to set defaultScope, surfacePatterns
-  3. Edit document/obsidian_context/_meta/obsidian_paths.json to add indexTargets, scanRoots
-  4. Run: claude-obsidian-runtime sync
+Next steps (4 phases):
+  1. [환경]  export CLAUDE_RUNTIME_HOME="..." (이미 자동 주입된 settings.local.json 확인)
+  2. [매니페스트]  .claude/runtime-manifest.json 의 defaultScope · surfacePatterns · scopeFolderMap · projectKinds 채우기
+  3. [볼트 라우트]  document/obsidian_context/_meta/obsidian_paths.json 의 indexTargets · scanRoots 채우기
+  4. [동기화]  claude-runtime sync && memory-refresh   ← 첫 코드/지식 인덱스 빌드
 ```
 
 ### 4-F. init 후 필수 편집 2개
@@ -242,7 +245,7 @@ init은 **뼈대**만 생성해. 아래 2개 파일을 프로젝트 실정에 �
 생성된 파일 예:
 ```json
 {
-  "runtimeVersion": "3.0.0",
+  "runtimeVersion": "3.3.4",
   "projectTag": "myproject",
   "defaultScope": "repo",
   "coreHooks": "all",
@@ -251,16 +254,29 @@ init은 **뼈대**만 생성해. 아래 2개 파일을 프로젝트 실정에 �
   "surfacePatterns": [],
   "scopeFolderMap": {},
   "preserveHooks": [],
-  "sessionEndPipeline": ["all"]
+  "sessionEndPipeline": ["all"],
+  "projectKinds": [],
+  "agentFanoutCap": 3,
+  "forgetting": { "minIdleDays": 90 },
+  "promotion": { "minHits": 3 },
+  "reflection": { "autoOnFailure": true }
 }
 ```
 
-**반드시 채울 것**:
+**반드시 채울 것** (필수 6축):
 - `defaultScope`: 기본 스코프 이름 (예: `backend`, `frontend`, `repo`)
 - `surfacePatterns`: public surface 감지 글롭 배열 (예: `["backend/src/routes/**", "frontend/src/app/**"]`)
 - `scopeFolderMap`: 스코프 → 폴더 매핑 (예: `{"backend": ["backend/src"], "frontend": ["frontend/src"]}`)
+- `preserveHooks`, `sessionEndPipeline`, `projectTag` 는 init 이 채움
 
-**선택**:
+**확장 — P0~P3 도입 필드** (생략 시 기본값):
+- `projectKinds`: `[]` (빈 배열) → lead 가 첫 세션에 사용자에게 물어봄. 명시 가능 값: `web` / `cli` / `data` / `library` / `unity` / `unknown` (복수 선택 가능)
+- `agentFanoutCap`: 한 위임 사이클당 동시 sub-agent 수 상한 (기본 3)
+- `forgetting.minIdleDays`: lesson 의 마지막 retrieval 로부터 idle 이 이 일수 넘으면 archive 후보 (기본 90)
+- `promotion.minHits`: draft 가 retrieval 에서 N회 이상 hit 되면 lead 가 정식 승격 제안 (기본 3)
+- `reflection.autoOnFailure`: task close 시 `failures ≥ 1` 이면 reflection draft 자동 생성 (기본 true)
+
+**선택 (전통)**:
 - `preserveHooks`: 프로젝트 고유 hook 파일명 배열 (install-hooks 재실행 시 보존됨)
 - `retrievalWeights`, `memoryLayers`: 고급 설정 (기본값 사용 권장)
 
@@ -390,6 +406,12 @@ rm -rf $CLAUDE_RUNTIME_HOME
 
 ### init 후 hook이 Claude Code에 안 잡힘
 → Claude Code 세션 재시작 필요. 또는 `.claude/settings.json` 수동 확인.
+
+### "session-end / stop hook 이 비어있는데 정상인가?"
+→ 정상. 두 hook 은 `exit 0` 만 들어있어서 의도적으로 no-op. Claude Code v2.1.128+ 가 hook 쉘에 `CLAUDE_SESSION_ID` 를 안 넘겨서 자동 hook 으로 호출되면 빈 id 로 parallel-task pointer 가 손상됨. 세션 종료는 `/task-close` slash 명령어(`$ARGUMENTS` 로 id 가 들어옴)로 진행.
+
+### "lead 가 자꾸 projectKind 를 묻는다"
+→ `runtime-manifest.json:projectKinds` 가 빈 배열일 때만. 한 번 채우면(예: `["web"]`) 다시 안 물음. 다시 묻게 하려면 `projectKinds: []` 로 수동 초기화.
 
 ### 볼트 권한 에러 (Permission denied)
 → `chmod -R u+w <vaultRoot>` (Linux/macOS) 또는 Windows 속성에서 읽기전용 해제.

@@ -10,23 +10,35 @@ claude-obsidian-runtime이 실제로 **무슨 일을 어떤 순서로 하는지*
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    사용자 (Claude Code 세션)                   │
+│              사용자 (Claude Code 세션)                          │
+│              + lead 에이전트 (PM, sub-agent 라우팅)             │
 └─────────────────────────────────────────────────────────────┘
-                           ↓ 세션 이벤트
+              ↓ 세션 이벤트                ↓ slash 커맨드 (8개)
 ┌─────────────────────────────────────────────────────────────┐
-│                     .claude/hooks/*.sh (6개)                  │
+│   .claude/hooks/*.sh (6개 정의 / 활성 4개)                       │
+│     활성:  session-start · prompt-context · subagent-start ·  │
+│           post-edit                                          │
+│     비활성: session-end · stop  (CLAUDE_SESSION_ID 미주입       │
+│           이슈로 exit 0. 마무리는 /task-close slash 가 담당)    │
 │   각 shell wrapper가 $CLAUDE_RUNTIME_HOME/commands/*.mjs 호출 │
 └─────────────────────────────────────────────────────────────┘
                            ↓ spawn
 ┌─────────────────────────────────────────────────────────────┐
 │              $CLAUDE_RUNTIME_HOME (shared 패키지)             │
 │                                                              │
-│   commands/*.mjs — CLI 레이어 (24개)                           │
+│   commands/*.mjs — CLI 레이어 (25개. eval-routing 포함)         │
 │       ↓ import                                              │
-│   core/*.mjs — 엔진 레이어                                    │
-│     ├─ memory/ (L1~L4 메모리 저장소 6개)                      │
-│     ├─ eval/ (평가 프레임 순수 함수 6개)                       │
-│     └─ 기타 (doctor/manifest/rollback/learning 등)             │
+│   core/*.mjs — 엔진 레이어 (33개)                             │
+│     ├─ memory/ (L1~L4 + retrieval-scoring + mmr +             │
+│     │           memory-evolution + safeguard)                │
+│     ├─ eval/ (golden / retrieval / lesson-reuse /             │
+│     │         performance / compare / routing-evaluator)     │
+│     ├─ delegation-schema (Governance, P2)                    │
+│     ├─ task-close-verify (S3 invariant gate)                 │
+│     ├─ todo-writer (S4 Current_Todo 자동 관리)                │
+│     ├─ cache-stable-stringify (S2 prefix 안정화)              │
+│     ├─ error-indexer (S1 errors.jsonl)                       │
+│     └─ doctor / manifest-schema / rollback / learning 등      │
 └─────────────────────────────────────────────────────────────┘
                            ↓ 읽고 씀
 ┌─────────────────────────────────────────────────────────────┐
@@ -34,19 +46,23 @@ claude-obsidian-runtime이 실제로 **무슨 일을 어떤 순서로 하는지*
 │                                                              │
 │   <projectDir>/.claude/runtime/        ← runtime 상태         │
 │     current-task.json / tasks/ / events/*.jsonl /            │
+│     events/errors.jsonl  ← S1 별도 채널                        │
+│     delegations.jsonl    ← P2 lead 위임 로그                   │
 │     retrieval/last-context.json / code-index/ /              │
 │     knowledge/ / architecture/ / eval/                       │
 │                                                              │
 │   <projectDir>/document/obsidian_context/  ← 볼트 mirror      │
 │     _meta/obsidian_paths.json / context_routes.json /        │
-│     (mirror of vault managed roots)                          │
+│     (mirror of vault managed roots, _quarantine 자동 prune)   │
 │                                                              │
 │   <vaultRoot>/                          ← Obsidian 볼트       │
-│     00_Home/ / 04_Architecture/ / ... / 10_Worklogs/         │
+│     00_Home/Current_Todo.md (S4 자동 관리) /                   │
+│     04_Architecture/ / 08_Lessons/ / 08_Reflections/ /        │
+│     ... / 10_Worklogs/                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**핵심 원칙**: 알고리즘은 shared (`$CLAUDE_RUNTIME_HOME`), 데이터는 project-local.
+**핵심 원칙**: 알고리즘은 shared (`$CLAUDE_RUNTIME_HOME`), 데이터는 project-local. lead 가 PM 으로 라우팅 + 모든 위임은 `delegations.jsonl` 기록 (Governance).
 
 ---
 
@@ -100,15 +116,18 @@ claude-obsidian-runtime이 실제로 **무슨 일을 어떤 순서로 하는지*
 - `.claude/settings.json`의 `hooks` 섹션 patch
 - `.claude/runtime-version.json` 기록
 
-**6개 core hook → 호출 대상 CLI**:
-| Hook 이벤트 | Shell wrapper | 호출 CLI |
-|-------------|--------------|----------|
-| SessionStart | runtime-session-start.sh | `commands/session-start.mjs` |
-| UserPromptSubmit | runtime-prompt-context.sh | `commands/prompt-context.mjs` |
-| SubagentStart | runtime-subagent-start.sh | `commands/subagent-start.mjs` |
-| Stop, SubagentStop | runtime-stop.sh | `commands/stop.mjs` |
-| SessionEnd | runtime-session-end.sh | `commands/session-end.mjs` |
-| PostToolUse (Edit/Write/Bash) | runtime-post-edit.sh | `commands/post-edit.mjs` |
+**6개 core hook → 호출 대상 CLI** (활성 4개 / 비활성 2개):
+
+| Hook 이벤트 | Shell wrapper | 호출 CLI | 활성 |
+|-------------|--------------|----------|------|
+| SessionStart | runtime-session-start.sh | `commands/session-start.mjs` | ✅ |
+| UserPromptSubmit | runtime-prompt-context.sh | `commands/prompt-context.mjs` | ✅ |
+| SubagentStart | runtime-subagent-start.sh | `commands/subagent-start.mjs` | ✅ |
+| PostToolUse (Edit/Write/Bash) | runtime-post-edit.sh | `commands/post-edit.mjs` | ✅ |
+| Stop, SubagentStop | runtime-stop.sh | `commands/stop.mjs` | ❌ `exit 0` |
+| SessionEnd | runtime-session-end.sh | `commands/session-end.mjs` | ❌ `exit 0` |
+
+**왜 2개가 비활성인가** (commit `f836e06`): Claude Code v2.1.128+ 가 hook 쉘에 `CLAUDE_SESSION_ID` 환경변수를 안 주입함. 자동 hook 으로 호출되면 빈 id 로 `current-task.json` parallel-task pointer 가 손상. 사용자가 `/task-close` slash 로 명시 종료 → `$ARGUMENTS` 로 id 전달 → `commands/session-end.mjs --close --session-id "${CLAUDE_SESSION_ID}"`.
 
 ---
 
@@ -127,12 +146,18 @@ $CLAUDE_RUNTIME_HOME/commands/session-start.mjs
   ↓ 읽음
 .claude/runtime/current-task.json  (있으면 active task 정보)
 .claude/runtime/tasks/<taskId>.json
+.claude/runtime/events/errors.jsonl  ← 최근 N건 주입 (S1)
 Obsidian 10_Worklogs/Auto/ 최신
-  ↓ stdout
+.claude/agents/<projectId>-lead.md   ← 포인터만 (본문 X)
+  ↓ stable-stringify (객체 키 정렬, S2)
 {type: "additionalContext", additionalContext: "[Runtime Session Context]\n..."}
   ↓ Claude Code가 시스템 컨텍스트로 주입
-Claude가 "진행 중인 task" 인식 가능 상태
+Claude가 "진행 중인 task + 최근 실패 + lead" 인식 가능 상태
 ```
+
+**stable-stringify 의 의미** (S2, `core/cache-stable-stringify.mjs`): 같은 task 의 같은 상태에서는 출력 토큰 시퀀스가 byte-identical. → KV-cache prefix 가 안 깨짐 → 다음 prompt-context 에서도 prefix hit. `commands/__tests__/session-start-prefix.test.mjs` 가 invariant 검증.
+
+**`projectKinds` 가 빈 배열인 첫 세션**: lead 가 추가 분기 — 사용자에게 kind 질문 → 응답 받으면 manifest 갱신. `templates/agents/__tests__/lead-notify-ask.test.mjs` 가 notify(알림만) vs ask(승인 필요) 컨벤션 검증.
 
 ### 2-B. 프롬프트 입력 시점 (UserPromptSubmit)
 
@@ -147,14 +172,23 @@ commands/prompt-context.mjs
 .claude/runtime/knowledge/*.jsonl  (lessons, reflections, procedures 등)
 .claude/runtime/code-index/*.jsonl  (scope별 surface 목록)
 document/obsidian_context/_meta/context_routes.json  (routes.groups)
-  ↓ 스코어링
-core/memory/retrieval-scoring.mjs :: scoreItem()
-  = α_recency * exp(-0.05 * days) + α_importance * (importance/10) + α_relevance * jaccard
-  ↓ stdout
+  ↓ ① applicable_when 게이트 (S1)  ── core/memory/retrieval-scoring.mjs :: passesApplicableWhen()
+       context.language / .layer / .task_type 모두 매칭 통과만 다음 단계
+  ↓ ② 3축 스코어링            ── scoreItem(item, ctx)
+       α_recency × exp(-0.05 × days)
+       + α_importance × (importance/10)
+       + α_relevance × jaccard(promptTokens, itemTokens)
+  ↓ ③ MMR (S2)                 ── core/memory/mmr.mjs :: rerankMMR()
+       λ=0.7. 점수 1~2위가 거의 동일 lesson 일 때 다양성 확보
+  ↓ ④ payload_ref 확장 (S2)    ── core/eval/event-reader.mjs
+       큰 payload 는 별도 파일로 빼고 ref 만 인덱스에 → 이벤트 라인 짧게 유지
+  ↓ stable-stringify
 {type: "additionalContext", additionalContext: "[Runtime Context]\n- code_hits: ...\n- read_first: ...\n- knowledge_hits: ..."}
   ↓
 Claude가 관련 코드/문서/교훈 자동 인식
 ```
+
+**핵심 변경 (v3.3)**: 점수 계산 앞단에 `applicable_when` 게이트가 들어왔다. lesson frontmatter 의 `applicable_when.language / layer / task_type` 이 현재 task context 와 모두 매칭되어야 후보로 통과. 빈 게이트(필드 없음)는 자동 통과 — 즉 기존 lesson 도 호환 동작.
 
 ### 2-C. 작업 수행 시점 (PostToolUse)
 
@@ -179,25 +213,37 @@ events/<scope>.jsonl   ← 한 줄 JSON row
 
 **dedup 로직** — file_read는 같은 sessionId + 같은 path는 60초 내 중복 제거 (`core/learning-capture.mjs`).
 
-### 2-D. 세션 종료 시점 (Stop / SessionEnd)
+### 2-C-bis. post-edit 의 추가 책임 (S4)
+
+`commands/post-edit.mjs` 가 도구 결과 분기 외에 두 가지를 더 한다:
+
+| 책임 | 코드 | 동작 |
+|------|------|------|
+| **frontmatter safeguard** | `core/memory/memory-evolution.mjs :: safeguardFrontmatter()` | lesson/decision auto write 시 frontmatter 검증 게이트. `applicable_when` / `trigger_keywords` / `confidence` 필수 필드 누락이면 write 차단 + warning |
+| **Current_Todo 자동 갱신** | `core/todo-writer.mjs` | task 의 진행 상태가 변할 때마다 `00_Home/Current_Todo.md` 를 lead 가 보는 형태로 자동 재작성 |
+
+`core/memory/__tests__/memory-evolution-safeguard.test.mjs` + `core/__tests__/todo-writer.test.mjs` 가 검증.
+
+### 2-D. 세션 종료 시점 (`/task-close` slash 만)
 
 ```
-Claude Code 세션 종료 or /task-close
-  ↓
-.claude/hooks/runtime-session-end.sh 실행
-  ↓
-commands/session-end.mjs
+사용자: /task-close [--verify]
+  ↓ Claude Code가 슬래시 명령어 실행
+commands/session-end.mjs --close --session-id "${CLAUDE_SESSION_ID}"
   ↓
 core/session-end-engine.mjs :: runSessionEndHooks(projectDir, {sessionId, taskId})
-  ↓ 고정 순서 훅 실행 (manifest.memoryLayers flag로 skip 가능)
+  ↓ 고정 순서 훅 실행 (manifest.memoryLayers / sessionEndPipeline flag로 skip 가능)
 ```
+
+> **자동 hook 으로 들어오지 않음**. `runtime-session-end.sh` / `runtime-stop.sh` 는 `exit 0` 만 들어있다 (D-18). 사용자가 명시 호출해야 마무리 발생.
 
 **세션 종료 훅 순서**:
 
-1. **capture_events** — 이번 task의 events.jsonl 로드
+1. **capture_events** — 이번 task의 events.jsonl 로드 (errors.jsonl 포함)
 2. **lesson_draft** (evolutionEnabled 기본 true)
    - `core/learning-curate.mjs :: buildLessonDraft(task, events)` 호출
    - v3 Zettelkasten 스키마 (trigger_keywords, applicable_when, confidence, importance, last_accessed_at, access_count, evolved_at, linked_reflection 등 11 필드)
+   - frontmatter safeguard 통과 후만 write (S4)
    - `08_Lessons/Drafts/<date>_<slug>.md` 생성
 3. **lesson_upsert** — `core/memory/semantic-store.mjs :: upsertLesson()`
    - `.claude/runtime/knowledge/lessons.jsonl`에 row append
@@ -206,6 +252,7 @@ core/session-end-engine.mjs :: runSessionEndHooks(projectDir, {sessionId, taskId
    - `buildReflectionDraft(task)` 호출 (실패 없으면 null 반환)
    - `08_Reflections/Drafts/<date>_<taskId>_reflection.md` 생성
    - `linked_lesson` 필드로 동 task의 lesson과 페어링
+   - reflection-agent 템플릿(`templates/agents/_recommended/_common/reflection-agent.md`)이 lead 에 의해 위임될 수도 있음 (P3)
 5. **reflection_upsert** — `core/memory/reflective-store.mjs :: upsertReflection()`
 6. **troubleshooting_draft** (failures ≥ 1)
    - `buildTroubleshootingDraft(task, failures)` — auto-fill 4섹션 + manual-fill 4섹션 (TODO 마커)
@@ -218,6 +265,52 @@ core/session-end-engine.mjs :: runSessionEndHooks(projectDir, {sessionId, taskId
 10. **procedural_distill** (proceduralEnabled 기본 true, 배치)
     - `distillProceduralMemory(taskHistory, vault)` — 30일 내 동일 surfacePattern 3회 이상 감지 시 `09_Templates/Procedures/Drafts/<scope>_<pattern>.md` 생성
 11. **procedural_upsert** — `core/memory/procedural-store.mjs :: upsertProcedure()`
+12. **current_todo_sync** (S4) — `core/todo-writer.mjs` 가 `00_Home/Current_Todo.md` 갱신
+13. **verify_gate** (S3, `--verify` 플래그가 있을 때만)
+    - `core/task-close-verify.mjs :: verifyClose(projectDir)`
+    - manifest 6축 / managed roots / `delegations.jsonl` 무결성 / `Current_Todo` 형식 등 invariant 점검
+    - 실패 시 non-zero exit + 사람에게 ask. 자동 복구 X.
+
+### 2-E. sub-agent 위임 시점 (SubagentStart, P2)
+
+lead 가 sub-agent 에 위임을 시도할 때마다.
+
+```
+lead: Task tool 호출 (subagent_type=<reviewer>, prompt=...)
+  ↓
+.claude/hooks/runtime-subagent-start.sh 실행
+  ↓
+commands/subagent-start.mjs
+  ↓ 검증
+core/delegation-schema.mjs :: validateDelegationPayload()
+  → from / to / agentScope / task / expected 필수 필드
+  → agentScope 가 from 의 권한 범위 안인지
+  → Maker-Checker: 같은 sub-agent 가 자기 산출물을 자기가 검증하는 구조 차단
+  ↓ append
+.claude/runtime/delegations.jsonl  ← 한 줄 JSON row
+  ↓
+실제 sub-agent 실행 진행
+```
+
+이 채널이 `eval-routing` 의 4 metrics (delegation correctness / bouncing / loop / recovery)의 입력. 깨지면 평가 자체가 깨짐.
+
+### 2-F. 실패 발생 시점 (errors.jsonl, S1)
+
+post-edit 가 `verification_failed` / `tool_failed` 이벤트를 적재하는 외에, **실패 패턴 인덱스**를 별도로 관리한다.
+
+```
+verification_failed / tool_failed 이벤트
+  ↓
+core/error-indexer.mjs :: appendError()
+  ↓ append
+.claude/runtime/events/errors.jsonl
+  ↓
+다음 SessionStart 가 자동으로 최근 N건 주입
+  ↓
+Claude 가 "최근 같은 종류의 실패가 있었음" 인지 → 재실패 차단
+```
+
+실측 검증: `commands/__tests__/session-start-errors.test.mjs`.
 
 ---
 
@@ -343,6 +436,41 @@ core/eval/compare-engine.mjs :: compareReports()
 | C12 | Performance | `last-context.json` < 1MB, task-usage 토큰 편차 |
 
 **--since-init 플래그 있으면**: fail 1건 이상 시 자동 롤백 프롬프트 (`core/doctor-rollback.mjs :: promptRollback()`). `y` → `.claude.backup-<ts>/`에서 복원 후 exit 2.
+
+### 3-F. 라우팅 평가 (P3, eval-routing)
+
+```
+node $CLAUDE_RUNTIME_HOME/commands/eval-routing.mjs --project-dir "$PWD"
+  ↓
+core/eval/routing-evaluator.mjs :: evaluateRouting()
+  ↓ 입력
+.claude/runtime/delegations.jsonl       ← 실제 위임 로그
+templates/eval/routing-goldens.json     ← 기대 위임 경로
+  ↓ 4 metrics 계산
+  - delegation_correctness  : (실제 ∩ 기대) / 기대  — 정확도
+  - bouncing                : "A→B→A" 반복 비율    — 반복 감지
+  - loop                    : "A→B→C→A" 같은 사이클  — 데드록 감지
+  - recovery                : 실패 후 다른 경로로 회복한 비율
+  ↓ 출력
+.claude/runtime/eval/reports/routing_<date>.json
+```
+
+낮은 점수가 나오면 lead 가 부적합한 sub-agent 에 위임하고 있다는 신호. lead 에이전트의 `## Capability Routing` 섹션 (`templates/agents/_lead.md`) 을 조정해야 함.
+
+### 3-G. Governance — 모든 위임을 한 줄로
+
+| 필드 | 의미 |
+|------|------|
+| `at` | timestamp |
+| `from` | 위임자 (보통 lead) |
+| `to` | 수임 sub-agent 이름 |
+| `agentScope` | 수임자가 만질 수 있는 디렉토리·파일 패턴 |
+| `task` | 위임 내용 요약 |
+| `expected` | 기대 결과 / 검증 가능한 산출물 |
+
+**Maker-Checker**: 같은 sub-agent 가 자기 산출물을 검증하지 않는다. lead 가 별도 reviewer 에이전트(`code-reviewer` 등)에게 검증을 위임 → `delegations.jsonl` 에 maker / checker 두 줄이 짝지어 남는다.
+
+`core/delegation-schema.mjs` 가 schema 검증, `commands/subagent-start.mjs` 가 hook 진입점, `core/eval/routing-evaluator.mjs` 가 후속 평가.
 
 ---
 
@@ -491,21 +619,27 @@ scopes: [backend]
 | 현재 활성 task | `<projectDir>/.claude/runtime/current-task.json` |
 | 모든 task 이력 | `<projectDir>/.claude/runtime/tasks/*.json` |
 | 이벤트 로그 | `<projectDir>/.claude/runtime/events/<scope>.jsonl` |
+| 실패 이벤트 (S1) | `<projectDir>/.claude/runtime/events/errors.jsonl` |
+| 위임 로그 (P2) | `<projectDir>/.claude/runtime/delegations.jsonl` |
 | 마지막 task-start 스냅샷 | `<projectDir>/.claude/runtime/retrieval/last-context.json` |
 | 코드 인덱스 | `<projectDir>/.claude/runtime/code-index/<scope>.jsonl` |
 | 지식 인덱스 (5 kind) | `<projectDir>/.claude/runtime/knowledge/{lessons,reflections,troubleshooting,decisions,procedures}.jsonl` |
-| 평가 리포트 | `<projectDir>/.claude/runtime/eval/reports/<date>_<projectId>.json` |
+| 평가 리포트 (4축) | `<projectDir>/.claude/runtime/eval/reports/<date>_<projectId>.json` |
+| 평가 리포트 (Routing) | `<projectDir>/.claude/runtime/eval/reports/routing_<date>.json` |
 | 매니페스트 | `<projectDir>/.claude/runtime-manifest.json` |
 | 볼트 경로 설정 | `<projectDir>/document/obsidian_context/_meta/obsidian_paths.json` |
 | 컨텍스트 라우트 | `<projectDir>/document/obsidian_context/_meta/context_routes.json` |
 | lead 에이전트 | `<projectDir>/.claude/agents/<projectId>-lead.md` |
+| 권장 sub-agent 카탈로그 | `$CLAUDE_RUNTIME_HOME/templates/agents/_recommended/<kind>/*.md` |
 | Hook shell wrapper | `<projectDir>/.claude/hooks/runtime-*.sh` |
+| Slash command | `<projectDir>/.claude/commands/*.md` (또는 `$CLAUDE_RUNTIME_HOME/templates/commands/*.md`) |
 | Auto worklog | `<vaultRoot>/10_Worklogs/Auto/<date>_<taskId>.md` |
 | Auto lesson | `<vaultRoot>/08_Lessons/Drafts/<date>_<slug>.md` |
 | Auto reflection | `<vaultRoot>/08_Reflections/Drafts/<date>_<taskId>_reflection.md` |
 | Auto troubleshooting | `<vaultRoot>/06_Troubleshooting/Drafts/<date>_<slug>.md` |
 | Auto architecture 후보 | `<vaultRoot>/04_Architecture/Generated/<date>_<slug>.md` |
 | Auto procedure 후보 | `<vaultRoot>/09_Templates/Procedures/Drafts/<scope>_<pattern>.md` |
+| Current_Todo (S4 자동) | `<vaultRoot>/00_Home/Current_Todo.md` |
 
 ---
 
@@ -537,18 +671,27 @@ scopes: [backend]
 
 ### 매일 손대는 곳 (사람이 편집)
 - `<vaultRoot>/00_Home/Current_Focus.md` — 오늘의 우선순위 3줄
+- 세션 마무리 시 `/task-close` (반드시 명시 호출)
 
 ### 주 1회 검토
-- `<vaultRoot>/08_Lessons/Drafts/` — 최근 lesson 훑어보기. 의미 있는 것만 정식 `08_Lessons/<scope>/*.md`로 이동
+- `<vaultRoot>/08_Lessons/Drafts/` — 최근 lesson 훑어보기. 의미 있는 것만 정식 `08_Lessons/<scope>/*.md`로 이동. **`applicable_when` 필드 채워졌는지 확인**
 - `<vaultRoot>/10_Worklogs/Auto/` 최근 5개 — 맥락 복원
+- `tail .claude/runtime/delegations.jsonl` — lead 가 위임한 sub-agent 목록 확인
 
 ### 월 1회
-- `<projectDir>/.claude/runtime-manifest.json` — `surfacePatterns`, `scopeFolderMap` 갱신
-- `memory-refresh` 실행
+- `<projectDir>/.claude/runtime-manifest.json` — `surfacePatterns`, `scopeFolderMap`, `projectKinds`, `agentFanoutCap` 갱신
+- `/memory-refresh` 실행
+- `node $CLAUDE_RUNTIME_HOME/commands/eval-routing.mjs` — 라우팅 metric 추세 확인. 하락하면 lead 의 Capability Routing 섹션 조정
 
 ### 문제 있을 때만
 - `doctor --full` — 진단
 - `rollback` — 복원
+- `/task-close --verify` — invariant gate 만 돌리고 싶을 때
+
+### 절대 손대지 말 것
+- `templates/hooks/runtime-session-end.sh`, `runtime-stop.sh` 의 `exit 0` (D-18)
+- `delegations.jsonl` 직접 편집 (eval-routing 신뢰 붕괴)
+- lesson frontmatter `applicable_when` 비우기 (S1 게이트 무력화)
 
 ---
 
