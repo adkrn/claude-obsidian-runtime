@@ -137,7 +137,35 @@
       "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" diff templates/agents/_lead.md templates/commands/agents-bootstrap.md templates/commands/task-close.md templates/commands/task-start.md)",
       "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" diff templates/hooks/runtime-session-end.sh templates/hooks/runtime-stop.sh)",
       "Bash(git -C \"c:/JSProj/claude-obsidian-runtime\" diff .claude/settings.local.json)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "PowerShell(Get-Service ssh-agent)",
+      "PowerShell(Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-Command','Set-Service ssh-agent -StartupType Automatic; Start-Service ssh-agent; Write-Host \\\\\"ssh-agent started\\\\\"; Start-Sleep -Seconds 2' -Wait)",
+      "PowerShell(ssh-add $env:USERPROFILE\\\\.ssh\\\\id_ed25519; ssh-add -l)",
+      "PowerShell(ssh -T -o StrictHostKeyChecking=accept-new git@github.com 2>&1)",
+      "PowerShell(Get-Content $env:USERPROFILE\\\\.ssh\\\\id_ed25519.pub | Set-Clipboard; Write-Host \"공개키가 클립보드에 복사됐어\"; Get-Content $env:USERPROFILE\\\\.ssh\\\\id_ed25519.pub)",
+      "PowerShell(git -C \"c:\\\\JSProj\\\\claude-obsidian-runtime\" remote -v)",
+      "PowerShell(git -C \"C:\\\\UnityProject\\\\Pas62Ctr\" remote -v)",
+      "PowerShell(git -C \"C:\\\\UnityProject\\\\Pas62Ctr\" remote set-url origin https://github.com/Dungeonsoft/Pas62Ctr.git)",
+      "PowerShell($env:CLAUDE_RUNTIME_HOME)",
+      "Bash(git -C C:/JSProj/claude-obsidian-runtime log --oneline -1 templates/_manifest.json)",
+      "Bash(git -C C:/JSProj/claude-obsidian-runtime log --oneline -1 templates/agents/_lead.md)",
+      "Bash(git -C C:/JSProj/claude-obsidian-runtime log --oneline -1 templates/commands/task-close.md)",
+      "Bash(git -C C:/JSProj/claude-obsidian-runtime diff --stat templates/_manifest.json)",
+      "Bash(git -C C:/JSProj/claude-obsidian-runtime status)",
+      "Bash(git -C C:/JSProj/claude-obsidian-runtime log --oneline -5)",
+      "Bash(git -C C:/JSProj/claude-obsidian-runtime add templates/_manifest.json)",
+      "Bash(git -C C:/JSProj/claude-obsidian-runtime commit -m 'chore: rebuild templates/_manifest.json \\(resync SHA256 after recent template edits\\) *)",
+      "Bash(git -C C:/JSProj/claude-obsidian-runtime push origin main)",
+      "Bash(gh repo *)",
+      "Bash(gh api *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "PowerShell(Get-Command unity-scanner -ErrorAction SilentlyContinue)",
+      "PowerShell(irm https://raw.githubusercontent.com/youngwoocho02/unity-scanner/master/install.ps1 | iex)",
+      "PowerShell(& \"C:\\\\Users\\\\adkrn\\\\AppData\\\\Local\\\\unity-scanner\\\\unity-scanner.exe\" --version)",
+      "PowerShell(& \"C:\\\\Users\\\\adkrn\\\\AppData\\\\Local\\\\unity-scanner\\\\unity-scanner.exe\" --help)",
+      "PowerShell(& \"C:\\\\Users\\\\adkrn\\\\AppData\\\\Local\\\\unity-scanner\\\\unity-scanner.exe\" list -p \"C:\\\\UnityProject\\\\AresParSimVR\" \"Assets/Prefabs/UI\" 2>&1)",
+      "Bash(where rg *)",
+      "Bash(git -C C:/JSProj/claude-obsidian-runtime diff --stat templates/)"
     ],
     "additionalDirectories": [
       "C:\\Users\\adkrn\\.claude\\plans",
@@ -149,7 +177,11 @@
       "c:\\JSProj\\talkSim\\document\\obsidian_context\\07_Decisions",
       "c:\\JSProj\\talkSim\\document\\obsidian_context\\_quarantine",
       "C:\\UnityProject\\AresParSimVR\\.claude",
-      "c:\\JSProj\\talkSim\\.claude\\runtime\\tasks"
+      "c:\\JSProj\\talkSim\\.claude\\runtime\\tasks",
+      "C:\\UnityProject\\AresParSimVR",
+      "C:\\JSProj\\musicGame\\.claude\\commands",
+      "C:\\JSProj\\Talkup\\.claude\\commands",
+      "C:\\JSProj\\Talkup_test1\\.claude\\commands"
     ]
   }
 }

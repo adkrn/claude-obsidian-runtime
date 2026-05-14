@@ -19,8 +19,9 @@
  *   - surfacePatterns: string[] (path segments that indicate architecture surfaces)
  *   - architecturePromoteThreshold: number (default 3)
  *
- * Worklog generation (if --close) is delegated to project-local worklog-generate.mjs
- * if present; otherwise skipped without error.
+ * Worklog generation (if --close) is performed inline using the shared
+ * buildHandoffWorklog engine and written to <vaultRoot>/10_Worklogs/Auto/
+ * via writeVaultArtifact (vault → queue fallback). Always produced on close.
  */
 
 import fs from 'fs';
@@ -47,7 +48,7 @@ import {
   writeJsonFile,
   writeJsonlFile
 } from '../core/runtime-lib.mjs';
-import { loadJson, normalizePath, sanitizeSlug, writeVaultArtifact } from '../core/utils.mjs';
+import { loadJson, normalizePath, sanitizeSlug, toDateStamp, writeVaultArtifact } from '../core/utils.mjs';
 import {
   buildContext as buildDoctorContext,
   runChecks as runDoctorChecks
@@ -202,23 +203,110 @@ function estimateContextTokens(taskRecord) {
     + (taskRecord.guardrails || []).length * 20;
 }
 
-async function tryGenerateWorklog(projectDir, params) {
-  const candidates = [
-    path.join(projectDir, 'scripts', 'runtime', 'worklog-generate.mjs'),
-    path.join(projectDir, '.claude', 'runtime', 'scripts', 'worklog-generate.mjs')
-  ];
-  for (const candidate of candidates) {
-    if (!fs.existsSync(candidate)) continue;
-    try {
-      const mod = await import(pathToFileURL(candidate).href);
-      if (typeof mod.generateTaskWorklog === 'function') {
-        return mod.generateTaskWorklog(projectDir, params);
-      }
-    } catch (err) {
-      process.stderr.write(`[session-end] worklog-generate import failed: ${err.message}\n`);
-    }
+function truncate(text, max) {
+  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
+function buildSection1Items(taskRecord) {
+  const items = [];
+  for (const f of taskRecord.files || []) {
+    const path = typeof f === 'string' ? f : f?.path;
+    if (path) items.push(`changed: ${path}`);
   }
-  return null;
+  for (const h of taskRecord.knowledgeHits || []) {
+    const title = truncate(h?.title || h?.id || '', 80);
+    if (title) items.push(`참고: ${title}`);
+  }
+  for (const r of taskRecord.readFirst || []) {
+    const p = typeof r === 'string' ? r : r?.path;
+    if (p) items.push(`읽음: ${p}`);
+  }
+  return items;
+}
+
+function buildSection4Lines(taskRecord) {
+  const lines = [];
+  const scopes = taskRecord.matchedScopes || [];
+  if (scopes.length > 0) lines.push(`matched scopes: ${scopes.join(', ')}`);
+  const prev = taskRecord.previousTask;
+  if (prev?.taskId) {
+    lines.push(`이어받은 task: ${prev.taskId} — ${truncate(prev.title || '', 60)}`);
+  }
+  return lines;
+}
+
+function formatBulletList(items, fallback) {
+  if (!items || items.length === 0) return `- ${fallback}`;
+  return items.map((s) => `- ${s}`).join('\n');
+}
+
+function generateWorklogInline(projectDir, taskRecord, obsidianConfig, params, now) {
+  const title = truncate(taskRecord.title || taskRecord.prompt || taskRecord.taskId, 80);
+  const section1Items = buildSection1Items(taskRecord);
+  for (const v of taskRecord.verifications || []) {
+    section1Items.push(`verification: ${v.success ? 'pass' : 'fail'} \`${v.command || ''}\``);
+  }
+  const section4Lines = buildSection4Lines(taskRecord);
+  const oneLiner = truncate(taskRecord.prompt || taskRecord.title || '', 100) || `next session entry: ${title}`;
+
+  const handoffMarkdown = [
+    `# Worklog — ${title}`,
+    '',
+    '## 이번 세션에서 한 일',
+    formatBulletList(section1Items, '변경 사항 없음'),
+    '',
+    '## 남은 일 (다음 세션 먼저 할 것)',
+    formatBulletList([], '남은 AC 없음'),
+    '',
+    '## 건드리면 안 되는 것',
+    formatBulletList(taskRecord.guardrails || [], '특이사항 없음'),
+    '',
+    '## 핵심 가정 (깨지면 재설계)',
+    formatBulletList(section4Lines, '기록 없음'),
+    '',
+    '## 한 줄 메모',
+    `"${oneLiner.replace(/"/g, '\\"')}"`,
+    ''
+  ].join('\n');
+
+  const date = toDateStamp(now);
+  const frontmatterLines = [
+    '---',
+    'type: worklog',
+    `taskId: ${taskRecord.taskId}`,
+    `sessionId: ${params.sessionId || ''}`,
+    `hookEventName: ${params.hookEventName || 'TaskClose'}`,
+    `date: ${date}`,
+    `modifiedFileCount: ${(taskRecord.files || []).length}`,
+    `failureCount: ${(taskRecord.verifications || []).filter((v) => v && v.success === false).length}`,
+    `scopes: [${(taskRecord.matchedScopes || []).join(', ')}]`,
+    '---',
+    ''
+  ];
+  const markdown = frontmatterLines.join('\n') + handoffMarkdown;
+
+  const slug = sanitizeSlug(taskRecord.taskId, 'worklog');
+  const relativePath = `10_Worklogs/Auto/${date}_${slug}.md`;
+  const writeResult = writeVaultArtifact({
+    projectDir,
+    vaultRoot: obsidianConfig?.vaultRoot || '',
+    relativePath,
+    content: markdown,
+    queueRoot: 'document/obsidian_writeback_queue'
+  });
+
+  return {
+    ok: true,
+    worklog: {
+      path: writeResult.path || '',
+      relativePath,
+      storage: writeResult.storage,
+      markdown,
+      status: 'ok'
+    }
+  };
 }
 
 async function tryCalculateTaskUsage(projectDir, params) {
@@ -391,17 +479,10 @@ async function main() {
 
     const usage = await tryCalculateTaskUsage(projectDir, { taskId: taskRecord.taskId, sessionId, closedAt: now.toISOString() });
     if (usage?.ok) tokenUsage = usage.usage;
-    worklogResult = await tryGenerateWorklog(projectDir, {
-      taskId: taskRecord.taskId,
+    worklogResult = generateWorklogInline(projectDir, taskRecord, obsidianConfig, {
       sessionId,
-      hookEventName: 'TaskClose',
-      usage: usage?.ok ? usage.usage : null,
-      curation: {
-        knowledgeFollowUp: taskRecord.knowledgeFollowUp || {},
-        lessons: newLessons
-      },
-      verify: verifyOutcome
-    });
+      hookEventName: 'TaskClose'
+    }, now);
 
     // DESIGN_MANUS_AG §6-C — carry-over unfinished todo items onto the
     // worklog and reset Current_Todo.md to the no-active-task body. Runs
