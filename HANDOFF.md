@@ -149,6 +149,65 @@ Claude는 세션 간 영속 메모리가 없음. 매번 같은 파일 탐색, �
 | D-20 | **KV-cache 보호 = stable-stringify + MMR + payload_ref (S2)** | 같은 task 의 session-start prefix 를 byte-identical 로 유지. cache hit rate 보호 | PRINCIPLES §6-tris, §12-12 |
 | D-21 | **error protocol + verify gate (S3)** | `events/errors.jsonl` 별도 채널 + `task-close --verify` 종료 직전 invariant 점검 | PRINCIPLES §12-13 |
 | D-22 | **Unity 는 5번째 kind (PLAN)** | Scene/Prefab/SO/UTF/XR 등은 web/cli/data/library 어디에도 안 맞음. 6 mandatory agent + 옵션 카탈로그 분리 | `docs/PLAN_UNITY_KIND.md` |
+| D-23 | **lesson 은 세션 Claude 가 직접 작성 (휴리스틱·API 둘 다 폐기)** | 실측: 휴리스틱 산출물 63개 중 1개(1.6%)만 쓸모, 98%가 보일러플레이트. 작업을 수행한 세션 Claude 가 맥락을 그대로 갖고 있으므로 "무엇을 왜 배웠나"를 직접 써서 `commands/learn-write.mjs`(얇은 CLI, stdin lesson JSON → frontmatter+jsonl 저장)에 넘긴다. 별도 LLM API 호출 불필요(비용 0, 키 불필요, 맥락 손실 0). `lesson-extractor` 의 summary/rules 생성부 제거. 재사용할 교훈 없으면 lesson 생성 skip(쓰레기 0). session-end hook 은 더 이상 lesson 을 만들지 않음(troubleshooting/decision/architecture/worklog 만) | `commands/learn-write.mjs`, `core/learning-curate.mjs::writeSessionLesson`, `templates/commands/task-close.md` |
+
+| D-24 | **task-start 의 session-id 환경변수 fallback 변수명 수정** | `task-start.mjs` 가 빈 `--session-id` 일 때 환경변수에서 복구를 시도하는데, 변수명이 `SESSION_ID`(오타)라 항상 빈 값 → 매번 fallback id 생성 → `/task-close` 첫 시도가 "no active task"(D-18 race 방어가 글로벌 pointer 거부). `CLAUDE_SESSION_ID` 를 우선 읽도록 수정 + `.trim()` 으로 `--session-id ""` 도 환경변수 재조회. hook 쉘에 실제로 `CLAUDE_SESSION_ID` 가 주입되면 fallback 없이 진짜 id 사용 → close 1회 성공. race 방어(D-18)는 불변 | `commands/task-start.mjs:243` |
+| D-25 | **decision 도 세션 Claude 가 create/update/skip 직접 작성 (휴리스틱 폐기, D-23 미러링)** | 진단: decision 은 전부 똑같은 고정 2문장("Keep runtime memory...")이고 92% skipped. 세션이 "무엇을 왜 결정했나"를 직접 써서 `decision-write.mjs` 에 넘김. create/update/skip 판단도 세션이 직접(코드의 토큰겹침 추측 폐기) — `list-artifacts.mjs` 로 기존 조회 후 없으면 create / 충분하면 skip / 보완이면 기존 읽고 전체 재작성 update(같은 id 교체). **세션 작성 decision 은 바로 `status: active`**(사람 승격 폐기 — D-5 전환). session-end 의 휴리스틱 decision 자동생성 제거 | `commands/decision-write.mjs`, `commands/list-artifacts.mjs`, `core/learning-curate.mjs::writeSessionDecision/listSessionArtifacts`, `templates/commands/task-close.md` |
+
+| D-26 | **lesson update/skip 판단 추가 + troubleshooting·architecture 세션작성 확장 (2-B 완료, D-25 미러링)** | (1) lesson: `writeSessionLesson` 이 항상 create 라 같은 주제 lesson 이 중복 생기던 것을 mode(create/update)+id override 로 교체. `findDuplicateCandidate` 호출 제거(세션이 판단), 세션작성 lesson 도 `status: active`/`generated_by: session-claude` 로 승격. (2) troubleshooting: `writeSessionTroubleshooting` 신설 — 기존 휴리스틱(failures 게이트 + manual 섹션 CURATOR_TODO 마커)을 세션이 증상/원인/수정/재발방지/검증 6섹션 직접 채우는 active 문서로 흡수. (3) architecture: `writeSessionArchitecture` 신설 — surfacePatterns 자동감지가 0개 만들던 것을 세션이 summary+body(markdown) 전체작성(부분교체 불필요). `KNOWLEDGE_INDEX_FILES.architecture='architecture.jsonl'` 신규, 경로 `04_Architecture/Generated/`. CLI 2개(`troubleshoot-write.mjs`/`architecture-write.mjs`, decision-write 복제), `list-artifacts.mjs` VALID_KINDS 에 architecture 추가. **465 tests green**(450+15). 격리 e2e(OBSIDIAN_VAULT_ROOT) 로 3산출물 실전 검증 | `core/learning-curate.mjs::writeSessionLesson/writeSessionTroubleshooting/writeSessionArchitecture`, `commands/{learn,troubleshoot,architecture}-write.mjs`, `commands/list-artifacts.mjs`, `templates/commands/task-close.md` §1~§1.7 |
+
+| D-27 | **세션 구분을 session_id → taskId 기반으로 전환 (session_id 외부의존 우회)** | 문제: Claude Code v2.1.128+ 가 hook/슬래시에 `CLAUDE_SESSION_ID` 미주입 → task-start 가 fallback id 생성 → task 가 `sessionIds:["fallback-*"]` 로 묶여 `/task-close --session-id` 가 "no active task"(세션이 수동으로 포인터 뒤짐). 조사(Explore 2 + Plan 1): **task-start 가 hook 아니라 슬래시/직접호출이라 self-identity 입력채널 자체가 없음** → session_id/transcript_path 복구 모두 동시세션 교차오집 못 막음. **전환**: session_id 되살리지 않고 **taskId(`createTaskId`, 양쪽이 독립적으로 아는 유일 안정키)로 직접 세션 구분.** session_id 의 "닫을 task 찾는 간접키" 역할이 사라져 글로벌 포인터 경합 자체가 소멸. **흐름**: `/task-start` 가 taskId 노출→세션 Claude 가 기억→`/task-close` 가 `--task-id` 우선 전달(session-end 의 --task-id 경로는 D-24 후속으로 이미 구현). 코드변경 0(엔진 기존 지원), **지시문 2개만**(task-start.md taskId 기억 명시 + task-close.md §2 --task-id 우선 + 도입부 taskId 안내). 멀티세션 동시 close 테스트 추가(**469 green**). 격리 e2e: session-id 없이 task-start→fallback→`--task-id` close→completed 확인. **D-18 race 방어 불변**(close 글로벌포인터 거부 안 건드림, --task-id 는 프로젝트내부+미마감 가드). session_id 체계 유지(Claude Code 가 env 복원 시 자동 활용, taskId 는 1차키). **한계**: 세션이 taskId 를 기억해야 함(컨텍스트 압축 시 포인터 폴백→멀티세션이면 부정확 가능). 과거 fallback task 11개는 자동 reconcile 불가(진짜 id 미보존), --task-id 로 개별 닫기만 | `templates/commands/task-start.md`, `templates/commands/task-close.md` §2, `commands/__tests__/session-isolation.test.mjs`, (엔진: `commands/session-end.mjs` --task-id 기존) |
+
+> **D-23 주의:**
+> - 검토 과정에서 "task-close hook 이 API 로 LLM 호출" 안을 구현했다가 **폐기**함 — hook 은 node 프로세스라 세션 맥락에 접근 못 해서 API 가 필요했지만, 애초에 세션 Claude 가 직접 쓰면 그 비용·복잡도가 전부 사라짐. `/task-close` 지시문이 세션 Claude 에게 lesson 작성을 시키는 구조로 전환.
+> - D-7(A-Mem 진화는 자카드만)은 여전히 유효 — D-23 은 lesson *작성* 만 바꾼 것. 메모리 *진화* 판정·검색(D-13 키워드)은 그대로. Phase 2(검색 임베딩)는 별도.
+
+> **D-24 주의:** 이 수정은 hook 쉘이 `CLAUDE_SESSION_ID` 를 프로세스 env 에 *실제로* 주입할 때만 fallback 을 없앤다. env 에도 없으면(Claude Code 버전 의존) 여전히 fallback id 생성 → close 시 그 fallback id 를 수동 전달해야 함. 그 경우 `--task-id` 명시 close 경로 추가가 다음 후보(미구현).
+
+---
+
+## §확장 가이드 — 다음 세션이 이어받을 일 (산출물 생성 정상화, Phase 2)
+
+**배경 진단(3프로젝트: Talkup 200 lesson / talkSim 57 / Pasim62 61):** 검색을 고치기 전에 산출물 자체가 무용지물임이 드러남.
+| 산출물 | 실태 | 처리 |
+|---|---|---|
+| lesson | 옛것 60% 보일러플레이트·92~94% draft 방치 | **D-23 + D-26 해결**(세션작성 + create/update/skip, active) |
+| decision | 고정 2문장·92% skipped | **D-25 해결**(세션 create/update/skip, active) |
+| troubleshooting | 95% 멀쩡(failures≥1 + 사람 manual) | **D-26 해결**(세션작성 6섹션 직접, active). 자동 draft 는 보조로 잔존 |
+| architecture | 3개월째 자동 0(surfacePatterns 비면 감지 0) | **D-26 해결**(세션작성 full body, active). detectArchitectureChanges 자동감지 코드수정은 2-C 잔여 |
+| procedure | 전 프로젝트 0개(감지조건 과도) | 코드수정(repeatThreshold 3→2 등) — **2-C 잔여** |
+| worklog | Talkup 0 / Pasim62 45(`--close` 의존) | 코드수정 — **2-C 잔여** |
+
+**검증 끝난 세션작성 패턴(D-25/D-26) — 새 산출물 추가 시 이걸 미러링:**
+- `core/learning-curate.mjs`: `buildXxxCandidate` 에 `override` 인자 + `status: active`/`generated_by: session-claude`(override 경로), `writeSessionXxx`(mode create/update, 중복판정 우회·항상 publish), `listSessionArtifacts(kind)` 재사용. `KNOWLEDGE_INDEX_FILES` 에 kind→jsonl 매핑 추가.
+- `commands/xxx-write.mjs` = `decision-write.mjs` 복제(mode 전달). `list-artifacts.mjs` `VALID_KINDS` 에 kind 추가.
+- `templates/commands/task-close.md` 에 해당 산출물 단계 추가(create/update/skip 판단 지시) → `node scripts/build-template-manifest.mjs` 로 SHA resync.
+- 테스트 = `core/__tests__/write-session-decision.test.mjs` 복제.
+
+**검증 시 필수(D-26 에서 확정):**
+- **CLI e2e 는 `OBSIDIAN_VAULT_ROOT` 를 sandbox 안으로 박을 것.** `obsidian-config.mjs:58-59` 가 config 없으면 글로벌 `C:\Obsidian`(실볼트)을 잡아 오염시킨다. 단위 테스트(captureVault 가짜 writer)는 이 누수를 못 잡으므로 CLI e2e 가 별도 필요.
+- **project-local task-close.md 사본은 실제로 존재함**(앞선 "0건"은 glob 경로 실수). slash command 는 `.claude/commands/` 물리 파일이라야 인식 → init 시 templates/ 에서 **복사**됨. 따라서 엔진/CLI(`$CLAUDE_RUNTIME_HOME` shared 참조=자동 동기)와 달리 **지시문 사본은 수동 갱신 전까지 옛 버전 고정.** D-26 후 5개(Pasim62/musicGame/talkSim/productSurveyEngine/magicDraft) 127L 새 버전 교체 완료(.bak 보존). **Talkup/Talkup_test1(29L)은 다른 옛 포맷**(`scripts/runtime/` 로컬 경로, $CLAUDE_RUNTIME_HOME 미사용 — 연동 불완전)이라 제외. **백로그**: slash command 사본 자동 동기 메커니즘 미구현.
+
+**D-26 후속 버그 수정(실전 검증으로 발견·해결):**
+- **lesson rules 보일러플레이트 혼입**: `buildLessonCandidate` 가 세션작성(override) 경로에서도 `buildLessonRules`(legacy 휴리스틱, task.guardrails 포함 — `context-resolver.mjs:247` 이 'read read_first notes...' 를 guardrail 로 주입)를 rules 뒤에 합쳐, 세션 lesson 끝에 보일러플레이트 1줄이 섞였음. D-23 "보일러플레이트 0" 위배. **수정**: override 경로면 `legacyRules=[]`(files 폴백은 유지 — 실데이터). 회귀 466 green + guardrails 심은 가짜통과 방지 테스트 추가. Pasim62 실볼트의 오염 lesson 1건은 mode:update 로 재작성해 정리(세션 rule 4개 보존, 오염 1줄만 제거).
+- **§1.7 architecture 게이트가 너무 좁음**: "구조를 *바꿨나*"만 물어서, 코드를 안 바꾸는 **분석·계획 task**(비효율 진단/리팩토링 계획/책임 분산 파악)의 구조 발견을 skip 하게 유도. architecture 의 본질은 "변경"이 아니라 "이 시스템이 어떻게 생겼는지의 지도"인데 분석 task 야말로 그 지도를 그리는 활동. **수정**: §1.7 게이트를 "구조를 바꿨거나 / 기존 구조를 새로 이해·문서화했나(분석·계획 task 포함, 코드 미변경도 해당)"로 확장 + 과잉 방지 가드. 5개 사본 동기 + manifest resync. Pasim62 의 놓친 ParticipantManager 좌석 배치 구조는 architecture-write 로 사후 작성(`04_Architecture/Generated/`). **교훈: 게이트 문구가 "변경"에 치우치면 분석 task 의 가치를 놓친다.**
+
+**D-26 2차 실전 검증(두 번째 task close)으로 발견·해결 — 보일러플레이트 근원 차단 + session-id 보강:**
+- **guardrail 보일러플레이트가 worklog·lesson·troubleshooting 으로 누수**: `context-resolver.mjs::buildGuardrails` 가 모든 task 에 `read read_first notes before writing a plan` 를 무조건 주입(세션 시작 가이드로는 의미 있음) → task 레코드에 저장 → 산출물 곳곳으로 샘(worklog "건드리면 안 되는 것"=`session-end.mjs:264`, lesson 휴리스틱 rules=`buildLessonRules:159`, troubleshooting Guardrails 섹션). **근원 차단**: `context-resolver.mjs` 에 `READ_FIRST_GUARDRAIL` 상수 + `isBoilerplateGuardrail()` export, 산출물 3곳에서 필터. task-start 컨텍스트 주입(세션 가이드)에는 그대로 둠. (참고: `runtime-doctor.mjs:68`/`rebuild-lessons.mjs:79` 도 이 문자열을 빈-lesson 마커로 사용 중.) 기존 worklog 테스트가 "이 보일러플레이트가 나와야 한다"고 박제돼 있던 걸 "진짜 guardrail 만 나오고 보일러플레이트는 제외"로 정정.
+- **session-end `--task-id` 미구현 → fallback task 못 닫음(D-24 잔여)**: hook 쉘이 `CLAUDE_SESSION_ID` 를 안 주입하면 task 가 fallback 세션에 묶여, 진짜 session-id 로는 close 불가(세션이 수동으로 포인터 뒤져 닫음). `session-end.mjs:378` 주석의 "--task-id 별도 보강 예정"을 **구현**: session/findBySession 실패 시 `--task-id` 로 직접 로드(단 현재 프로젝트 내부 + status 미마감일 때만 — D-18 race 방어 불변). 회귀방지 테스트 2개(fallback close / 이미닫힌 task 거부) 추가. **단 근본(hook 의 CLAUDE_SESSION_ID 미주입)은 Claude Code 측 외부 요인이라 미해결** — `--task-id` 는 우회책. **→ D-27 에서 이 우회책을 정식 1차 경로로 격상**: 지시문이 taskId 기억→`--task-id` 종료를 표준 흐름으로 만들어 session_id 외부의존을 통째로 우회. session_id 복구는 시도하지 않기로 결정(동시세션 교차오집 못 막음).
+- **worklog "한 일"이 recall 노트로 채워짐 — 3차 검증으로 진단 정정(두 층위 분리)**: 앞서 "외부 한계로 복구 불가"라 적었으나, 3차 task(47c12f97) 이벤트 로그를 까보니 정정 필요. `buildSection1Items`(session-end.mjs)가 section1("이번 세션에서 한 일")을 **3소스 혼합**으로 채움: `taskRecord.files`→`changed:`(실수정), `knowledgeHits`→`참고:`(recall), `readFirst`→`읽음:`(recall). 두 독립 문제가 섞임:
+  - **문제 A (표현 결함 — 우리 코드, 고칠 수 있음·미수정)**: 실수정이 0이면 recall 노트(`참고:/읽음:`)만 남아 "한 일"을 도배. recall 한 건 "한 일"이 아니다. **수정안**: section1 을 `changed`(실작업)와 recall(참고 컨텍스트)로 **분리**, 실수정 0이면 "기록된 변경 없음" 명시하고 recall 은 별도 "참고한 컨텍스트" 섹션으로. fallback 여부와 무관하게 분석 task 면 항상 옳은 방향.
+  - **문제 B (데이터 손실 — 외부 요인, 별개)**: fallback session-id 묶임 시 실수정이 있어도 추적 0 가능. 단 **47c12f97 은 해당 없음** — 이벤트 로그가 `task_started/session_end_skipped/task_closed` 3개뿐, **파일 수정 이벤트 0개 = 진짜로 코드 안 바꾼 분석 task**(사용자가 착수 직전 중단). 즉 이 worklog 의 빈 "한 일"은 손실이 아니라 사실. B 의 근본(hook 의 CLAUDE_SESSION_ID 미주입)은 여전히 Claude Code 외부 요인.
+  - **결론**: "복구 불가"는 부정확했음 — A 는 표현 수정으로 해결 가능(다음 과제), B 만 외부 의존이며 이번 케이스엔 B 영향 없음. 우선순위: **2-C 와 함께 section1 표현 분리.**
+- **architecture body `## 개요` 중복**: `buildArchitectureCandidate` 가 `## 개요\n- {summary}` 를 자동 추가하는데 세션이 body 에 또 `## 개요` 를 넣으면 중복. **수정**: 자동 `## 개요` 블록 제거(summary 는 frontmatter 에만), body 전체를 세션이 책임(전체재작성 철학과 일치).
+- **468 tests green**(466+2). Pasim62 의 오염 worklog 1건은 보일러플레이트 줄 직접 제거+정상화. 2번째 task 의 lesson/architecture 본체는 품질 양호(보일러플레이트 0 재확인, 반례 중심 rules, 5단계 흐름 추적).
+
+**2-C 후보(이번 범위 밖, 발견된 것):**
+- **toDateStamp 날짜 +1 밀림**: task `updatedAt` 이 UTC 자정 직후(KST 자정 근처)면 로컬타임존(KST+9) 변환으로 파일명/frontmatter date 가 하루 밀림. 동작엔 무해(파일명 일관성만).
+- **trigger_keywords surrogate 손상**: Pasim62 일부 lesson 의 trigger_keywords 에 깨진 유니코드(surrogate `\udcec`)가 있음. 검색 품질 저하 가능. jsonl 재인코딩 시 Python 에서 터짐(Node 는 OK).
+- procedure repeatThreshold 3→2, worklog `--close` 의존 완화, architecture detectArchitectureChanges 자동감지, 기존 draft 방치분 active 재인덱싱.
+
+**다음 단계 우선순위:** ~~(2-B) lesson update/skip + architecture/troubleshooting 세션작성~~ **← D-26 완료**. (2-C) procedure/worklog/architecture-detect 코드로직 + 기존 draft 방치분 active 재인덱싱 + toDateStamp 버그. (3) 검색 경량개선(trigger_keywords 가중+BM25/IDF+char n-gram, 임베딩 seam 예약 — `task-start.mjs:80 buildLessonReadFirst`, relevance `retrieval-scoring.mjs:226`, knowledgeHits `context-resolver.mjs:121` 별도). **재료(산출물)가 멀쩡해진 뒤라야 검색이 의미 있음.**
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "packageVersion": "3.3.4",
-  "generatedAt": "2026-05-12T07:09:08.840Z",
+  "generatedAt": "2026-06-25T09:33:18.701Z",
   "generator": "scripts/build-template-manifest.mjs",
   "files": [
     {
@@ -168,14 +168,14 @@
     },
     {
       "relPath": "commands/task-close.md",
-      "sha256": "13e40283abff544ee3816822498990b88498fc652624884873c18d5a50304d95",
-      "size": 717,
+      "sha256": "a688fea1264fed180572896cdfbe790411a27598e6bce652415fbf3d9ef1c751",
+      "size": 10446,
       "required": false
     },
     {
       "relPath": "commands/task-start.md",
-      "sha256": "811a03ea5949d087d1ffd19c804136e5094ab8c31ccd251f5de2cdb2ba7d8f59",
-      "size": 1489,
+      "sha256": "f84f71c5958915388225723ec7397b98a92ec9fa88d9768873bf7c7590177b10",
+      "size": 1937,
       "required": false
     },
     {
@@ -281,5 +281,5 @@
       "required": false
     }
   ],
-  "rootFingerprint": "fb434d7800f19f4cc1835d5b8db1037ab5deaaf7507b8ed7bbfac0214a69a2fc"
+  "rootFingerprint": "e342bbb0a9ef0967b7245e76fc258a6e88fef90e1b21df711ef08f0dcb941dc8"
 }

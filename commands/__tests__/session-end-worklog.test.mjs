@@ -143,7 +143,8 @@ describe('session-end worklog (regression)', () => {
       knowledgeHits: [
         { id: 'lesson-x', title: 'Lesson - prior research on contingency UI reuse', scope: 'repo' }
       ],
-      guardrails: ['read read_first notes before writing a plan'],
+      // 보일러플레이트(read read_first notes)는 산출물에서 제외되고, 진짜 guardrail 만 남아야 함
+      guardrails: ['read read_first notes before writing a plan', 'preserveHooks: keep PostToolUse formatter'],
       previousTask: { taskId: 'prev-task-1', title: 'earlier line twist exploration', status: 'active' }
     };
     writeJsonFile(taskPath, taskRecord);
@@ -170,7 +171,8 @@ describe('session-end worklog (regression)', () => {
     assert.match(body, /읽음: 00_Home\/Current_Focus\.md/, 'section1 must include readFirst path');
     assert.ok(!/변경 사항 없음/.test(body), 'section1 fallback must not appear when knowledgeHits/readFirst present');
 
-    assert.match(body, /- read read_first notes before writing a plan/, 'section3 must include guardrails');
+    assert.match(body, /- preserveHooks: keep PostToolUse formatter/, 'section3 must include real guardrails');
+    assert.ok(!/read read_first notes before writing a plan/.test(body), 'section3 must exclude boilerplate guardrail');
     assert.match(body, /matched scopes: repo/, 'section4 must include matchedScopes');
     assert.match(body, /이어받은 task: prev-task-1 — earlier line twist exploration/, 'section4 must include previousTask');
 

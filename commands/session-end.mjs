@@ -30,6 +30,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { loadObsidianConfig } from '../core/obsidian-config.mjs';
 import { syncManagedRoots } from '../core/obsidian-sync.mjs';
 import { buildReflectionDraft, curateTaskKnowledge } from '../core/learning-curate.mjs';
+import { isBoilerplateGuardrail } from '../core/context-resolver.mjs';
 import {
   parseSessionEndArgs,
   rotateStaleEventLogs
@@ -45,6 +46,7 @@ import {
   loadCurrentTaskPointer,
   loadJsonl,
   loadSessionTaskPointer,
+  loadTaskRecord,
   writeJsonFile,
   writeJsonlFile
 } from '../core/runtime-lib.mjs';
@@ -261,7 +263,7 @@ function generateWorklogInline(projectDir, taskRecord, obsidianConfig, params, n
     formatBulletList([], '남은 AC 없음'),
     '',
     '## 건드리면 안 되는 것',
-    formatBulletList(taskRecord.guardrails || [], '특이사항 없음'),
+    formatBulletList((taskRecord.guardrails || []).filter((g) => !isBoilerplateGuardrail(g)), '특이사항 없음'),
     '',
     '## 핵심 가정 (깨지면 재설계)',
     formatBulletList(section4Lines, '기록 없음'),
@@ -338,14 +340,32 @@ async function main() {
   let taskRecord = null;
   let resolvedTaskPath = '';
 
+  // PRINCIPLES §12-10 fix — race 차단:
+  // session pointer 만 신뢰. 글로벌 pointer fallback 제거.
+  // session pointer 의 taskPath 는 반드시 현재 projectDir 내부여야 함 (cross-project stale 차단).
+  const resolvedProjectDir = path.resolve(projectDir);
+  function isPathInsideProject(p) {
+    if (!p) return false;
+    const abs = path.resolve(p);
+    const rel = path.relative(resolvedProjectDir, abs);
+    return !rel.startsWith('..') && !path.isAbsolute(rel);
+  }
+
   if (sessionId) {
     const sessionPointer = loadSessionTaskPointer(projectDir, sessionId);
     if (sessionPointer?.taskPath) {
-      const candidate = loadJson(path.resolve(sessionPointer.taskPath), null);
-      if (candidate) {
-        taskRecord = candidate;
-        resolvedTaskPath = path.resolve(sessionPointer.taskPath);
+      if (isPathInsideProject(sessionPointer.taskPath)) {
+        const candidate = loadJson(path.resolve(sessionPointer.taskPath), null);
+        if (candidate) {
+          // sessionId 가 task 의 sessionIds 에 있는지 확인 — 진짜 소유권 검증
+          const ownerList = Array.isArray(candidate.sessionIds) ? candidate.sessionIds : [];
+          if (ownerList.length === 0 || ownerList.includes(sessionId)) {
+            taskRecord = candidate;
+            resolvedTaskPath = path.resolve(sessionPointer.taskPath);
+          }
+        }
       }
+      // taskPath 가 다른 프로젝트 가리키면 stale — 조용히 무시 (오래된 복사 흔적)
     }
   }
 
@@ -354,14 +374,38 @@ async function main() {
     if (found) { taskRecord = found.task; resolvedTaskPath = path.resolve(found.taskPath); }
   }
 
+  // --task-id 명시 경로 (D-24 후속): hook 쉘이 CLAUDE_SESSION_ID 를 안 주입해 task 가
+  // fallback 세션에 묶인 경우, session-id 로는 못 닫는다. 사용자가 task-id 를 명시하면
+  // 그 task 를 직접 닫되, race 안전을 위해 (1) 현재 프로젝트 내부 task 이고 (2) status 가
+  // 아직 닫히지 않았을 때만 허용한다(D-18 글로벌 pointer race 방어는 불변).
+  if (!taskRecord && String(args.taskId || '').trim()) {
+    const loaded = loadTaskRecord(projectDir, args.taskId.trim());
+    if (loaded?.task && isPathInsideProject(loaded.taskPath)) {
+      const status = String(loaded.task.status || '').toLowerCase();
+      if (status !== 'closed' && status !== 'archived') {
+        taskRecord = loaded.task;
+        resolvedTaskPath = path.resolve(loaded.taskPath);
+      }
+    }
+  }
+
+  // 글로벌 pointer fallback 제거. session/task-id 둘 다 비면 "no active task" 로 명시 종료.
+  // 이전 동작은 다른 세션이 진행중인 task 를 잘못 닫는 race 의 주원인.
   const globalPointer = loadCurrentTaskPointer(projectDir);
-  if (!taskRecord && globalPointer?.taskPath) {
-    const candidate = loadJson(path.resolve(globalPointer.taskPath), null);
-    const ownerSession = Array.isArray(candidate?.sessionIds) ? candidate.sessionIds[0] : '';
-    const ownsTask = !sessionId || !ownerSession || ownerSession === sessionId;
-    if (candidate && ownsTask) {
-      taskRecord = candidate;
-      resolvedTaskPath = path.resolve(globalPointer.taskPath);
+  if (!taskRecord) {
+    if (globalPointer?.taskId) {
+      appendJsonl(getEventFilePath(projectDir, now), {
+        ts: now.toISOString(),
+        taskId: '',
+        eventType: 'session_end_skipped',
+        scope: defaultScope,
+        summary: 'session-end refused to close global-pointer task (race protection)',
+        detail: {
+          sessionId,
+          globalTaskId: globalPointer.taskId,
+          reason: 'no session-owned task; refusing to close another session\'s task'
+        }
+      });
     }
   }
 
@@ -381,6 +425,8 @@ async function main() {
   const obsidianConfig = loadObsidianConfig(projectDir);
   const inferScope = buildInferScope(manifest);
 
+  // lesson 본문은 세션 Claude 가 /task-close 흐름에서 learn-write 로 작성·저장한다(D-23).
+  // 여기서는 troubleshooting/decision/architecture 등 휴리스틱 산출물만 처리.
   const curationResult = curateTaskKnowledge(projectDir, {
     taskId: taskRecord.taskId,
     publish: true

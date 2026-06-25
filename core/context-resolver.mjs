@@ -241,10 +241,25 @@ export function resolveKnowledgeHits(projectDir, { promptTokens, matchedScopes, 
  * @param {string[]} [config.extraRules] - additional rules to append (e.g. top lesson rules)
  * @returns {string[]}
  */
+// 모든 task 에 무조건 박히는 세션 동작 지시(read_first 노트 읽고 계획하라).
+// task-start 컨텍스트 주입(세션 가이드)에는 의미가 있으나, 산출물(worklog/lesson/
+// troubleshooting)에 들어가면 보일러플레이트 노이즈다. 산출물 생성 시 isBoilerplateGuardrail
+// 로 걸러낸다. (rebuild-lessons/runtime-doctor 도 이 문자열을 빈-lesson 판별 기준으로 사용 중.)
+export const READ_FIRST_GUARDRAIL = 'read read_first notes before writing a plan';
+
+/**
+ * 산출물에서 제외해야 할 보일러플레이트 guardrail 인지 판정.
+ * @param {string} rule
+ * @returns {boolean}
+ */
+export function isBoilerplateGuardrail(rule) {
+  return String(rule || '').trim() === READ_FIRST_GUARDRAIL;
+}
+
 export function buildGuardrails(promptTokens, matchedGroups, matchedScopes = [], config = {}) {
   const guardrails = [];
 
-  guardrails.push('read read_first notes before writing a plan');
+  guardrails.push(READ_FIRST_GUARDRAIL);
 
   const stemMatch = (tokens, stems) =>
     tokens.some((t) => stems.some((s) => t === s || t.startsWith(s)));

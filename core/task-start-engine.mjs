@@ -53,7 +53,16 @@ export function createAndStartTask(args, config) {
     ? getRuntimePaths(projectDir)
     : ensureRuntimeLayout(projectDir);
   const previousTask = dryRun ? null : loadCurrentTaskPointer(projectDir);
-  const sessionId = args.sessionId || '';
+  // PRINCIPLES §12-10 — Claude Code v2.1.128+ 에서 hook 쉘에 CLAUDE_SESSION_ID 가 미주입되는 케이스 대비.
+  // sessionId 가 비어있으면 fallback id 생성. 이래야 task.sessionIds 가 비지 않고
+  // session-end 의 소유권 검증이 정상 동작한다 (race 차단의 한 축).
+  let sessionId = args.sessionId || '';
+  let sessionIdFallback = false;
+  if (!sessionId) {
+    sessionId = `fallback-${now.getTime().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    sessionIdFallback = true;
+    process.stderr.write(`[runtime] Warning: CLAUDE_SESSION_ID missing — using fallback ${sessionId}\n`);
+  }
 
   if (!dryRun && previousTask?.status === 'active' && previousTask?.taskId) {
     process.stderr.write(`[runtime] Warning: overwriting active task ${previousTask.taskId} with new task\n`);
@@ -98,6 +107,7 @@ export function createAndStartTask(args, config) {
     },
     files: [],
     sessionIds: uniqueStrings([sessionId]),
+    sessionIdFallback: sessionIdFallback || undefined,
     sync,
     previousTask: previousTask ? {
       taskId: previousTask.taskId || '',

@@ -35,6 +35,7 @@ import {
 } from '../core/context-resolver.mjs';
 import { applyMMR, emitSortByPath } from '../core/memory/mmr.mjs';
 import { scoreItems } from '../core/memory/retrieval-scoring.mjs';
+import { bumpHitCounts } from '../core/memory/hit-counts.mjs';
 import { generateInitialTodoList, writeTodoFile } from '../core/todo-writer.mjs';
 import { loadObsidianConfig } from '../core/obsidian-config.mjs';
 
@@ -132,7 +133,8 @@ export function buildLessonReadFirst({
       why: `lesson: ${(lesson.title || lesson.summary || '').slice(0, 120)}`,
       mirrorPath: hasMirror
         ? path.posix.join('document', 'obsidian_context', sourcePath)
-        : ''
+        : '',
+      lessonId: lesson.id || ''
     };
   }).filter((item) => item.path);
 }
@@ -238,8 +240,10 @@ export function runTaskStart(argv) {
   }
   args.projectDir = path.resolve(args.projectDir);
 
-  if (!args.sessionId) {
-    args.sessionId = process.env.SESSION_ID || '';
+  // hook 쉘이 --session-id "" (빈 값) 를 넘기는 케이스 대비: 빈 값이면 환경변수에서 복구.
+  // 실제 환경변수명은 CLAUDE_SESSION_ID (이전엔 SESSION_ID 오타로 항상 fallback id 생성됨).
+  if (!String(args.sessionId || '').trim()) {
+    args.sessionId = process.env.CLAUDE_SESSION_ID || process.env.SESSION_ID || '';
   }
 
   return createAndStartTask(args, {
@@ -247,6 +251,15 @@ export function runTaskStart(argv) {
     resolveContext: defaultResolveContext,
     defaultScope: 'repo',
     afterWrite: ({ projectDir, sessionId, taskRecord, taskFilePath, runtimePaths }) => {
+      // PRINCIPLES §6 — readFirst에 포함된 lesson의 hit-counts 누적
+      // 3축 retrieval scoring 의 recency/importance 데이터 소스.
+      // 실패해도 task 진행을 막지 않는다 (silent).
+      try {
+        bumpHitCounts(projectDir, taskRecord.readFirst || [], {
+          taskId: taskRecord.taskId
+        });
+      } catch { /* non-critical */ }
+
       // DESIGN_MANUS_AG §6-A — emit Current_Todo.md from initial readFirst.
       // Silent skip when vault is unavailable; task creation still succeeds.
       try {

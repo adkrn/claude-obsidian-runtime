@@ -32,6 +32,7 @@ import {
 import { scoreItems } from '../core/memory/retrieval-scoring.mjs';
 import { loadErrors } from '../core/error-indexer.mjs';
 import { stableStringify } from '../core/cache-stable-stringify.mjs';
+import { gcOrphanPointers } from '../core/pointer-gc.mjs';
 
 // ── DESIGN_MANUS_B §6/§7 — Related Past Failures injection ───────
 
@@ -386,6 +387,13 @@ export function buildRuntimeSessionStartContext(projectDir, input = {}) {
   ensureRuntimeLayout(projectDir);
   const sessionId = input.session_id || input.sessionId || '';
   const sessionStartedAt = new Date().toISOString();
+
+  // PRINCIPLES §7-quater — orphan current-task-<sid>.json 정리.
+  // 현재 세션은 절대 건드리지 않고, 7일 이상 묵은 + 활동 흔적 없는 + task closed 인 것만 archive로 이동.
+  // 실패해도 session-start 본 흐름은 계속.
+  try {
+    gcOrphanPointers(projectDir, { activeSessionId: sessionId });
+  } catch { /* non-critical */ }
 
   // Session isolation: prefer per-session pointer. Never auto-attach this
   // sessionId to the global pointer's task — that would let an unrelated
