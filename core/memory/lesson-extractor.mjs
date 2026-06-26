@@ -51,7 +51,18 @@ const TASK_TYPE_HINTS = [
 const STOP_TOKENS = new Set([
   '이', '그', '저', '것', '수', '문서', '읽고', '진행해', '해줘', '해', '돼', '돼지',
   '의', '와', '을', '를', '에', '에서', '으로', '로', '도',
-  'the', 'a', 'an', 'is', 'in', 'on', 'with', 'and', 'or', 'to', 'for'
+  'the', 'a', 'an', 'is', 'in', 'on', 'with', 'and', 'or', 'to', 'for',
+  // Boilerplate-derived tokens ("read read_first notes before writing a plan").
+  // These leaked into trigger_keywords and polluted retrieval (read=24x etc.).
+  'read', 'read_first', 'before', 'after', 'notes', 'writing', 'plan',
+  // Korean command verbs / fillers / sentence fragments — no retrieval signal.
+  '구현', '구현해줘', '구현해', '하는데', '하는', '하고', '진행',
+  '시작해', '시작', '명세대로', '문서대로', '작성', '작성해줘', '작성해', '보고',
+  '지금', '바로', '현재', '어떻게', '어떤', '사용할지', '사용', '싶은데', '싶어',
+  '좀', '확인', '확인해줘', '정리', '정리해줘', '알려', '알려줘',
+  '만들어', '만들어줘', '추가', '추가해줘', '세션', '계획', '계획좀',
+  // English generic verbs.
+  'this', 'that', 'add', 'fix', 'make', 'use', 'check'
 ]);
 
 export function detectLanguage(files = []) {
@@ -99,7 +110,11 @@ export function buildTriggerKeywords(text = '', files = [], topN = 8) {
     .toLowerCase()
     .replace(/[^\p{L}\p{N}_\s.\-/]/gu, ' ')
     .split(/\s+/)
-    .filter((t) => t && t.length >= 2 && !STOP_TOKENS.has(t));
+    // Strip leading/trailing dots so "구현해줘." matches the stopword "구현해줘".
+    .map((t) => t.replace(/^[.]+|[.]+$/gu, ''))
+    .filter((t) => t && t.length >= 2 && !STOP_TOKENS.has(t))
+    // Drop pure numbers — no retrieval signal (e.g. "100").
+    .filter((t) => !/^[0-9]+$/u.test(t));
   const fileTokens = (files || [])
     .map((f) => path.basename(String(f), path.extname(String(f))))
     .filter(Boolean);
