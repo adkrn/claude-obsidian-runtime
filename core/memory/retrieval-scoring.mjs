@@ -205,6 +205,7 @@ export function evaluateGate(item, ctx = {}) {
  *   - applicable_when?: object | string | null  (F §4-A)
  * @param {object} ctx
  *   - promptTokens: string[]
+ *   - relevanceFn?: (item, ctx) => number  (Phase A seam; default = jaccard)
  *   - weights?: { alphaRecency, alphaImportance, alphaRelevance, decayRatePerDay }
  *   - now?: Date (test injection)
  *   - candidatePaths?: string[]   (F §5-B)
@@ -223,7 +224,13 @@ export function scoreItem(item, ctx = {}) {
 
   const recency = recencyScore(item.last_accessed_at, weights.decayRatePerDay, now);
   const importance = importanceScore(item.importance);
-  const relevance = jaccardSimilarity(promptTokens, itemTokens);
+  // Relevance seam (Phase A — G1): callers may inject a richer relevance
+  // function (trigger_keywords / IDF / n-gram, or later cosine). When absent
+  // or not a function, fall back to token Jaccard so existing behavior — and
+  // every test written against it — is byte-identical.
+  const relevance = typeof ctx.relevanceFn === 'function'
+    ? ctx.relevanceFn(item, ctx)
+    : jaccardSimilarity(promptTokens, itemTokens);
 
   const rawScore = (
     weights.alphaRecency * recency +

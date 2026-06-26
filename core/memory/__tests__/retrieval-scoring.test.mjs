@@ -83,3 +83,59 @@ test('DEFAULT_WEIGHTS frozen and matches spec', () => {
   assert.equal(DEFAULT_WEIGHTS.alphaRelevance, 1.5);
   assert.equal(DEFAULT_WEIGHTS.decayRatePerDay, 0.05);
 });
+
+// ── relevanceFn seam (Phase A — G1 base) ─────────────────────────
+
+test('seam: relevanceFn NOT injected → identical jaccard behavior (465 invariant)', () => {
+  const now = new Date('2026-04-23T00:00:00Z');
+  const item = {
+    importance: 9,
+    last_accessed_at: now.toISOString(),
+    tokens: ['a', 'b']
+  };
+  // No relevanceFn in ctx → must fall back to jaccard(['a'],['a','b'])=0.5.
+  // recency=1, importance=0.9, relevance=1.5*0.5 → 2.65 (unchanged baseline).
+  const score = scoreItem(item, { promptTokens: ['a'], now });
+  assert.ok(Math.abs(score - 2.65) < 1e-9);
+});
+
+test('seam: relevanceFn injected → used for relevance term (alphaRelevance * fn)', () => {
+  const now = new Date('2026-04-23T00:00:00Z');
+  const item = {
+    importance: 9,
+    last_accessed_at: now.toISOString(),
+    tokens: ['a', 'b']
+  };
+  // Inject a constant relevanceFn → relevance term becomes 1.5 * 0.2 = 0.3.
+  // recency=1, importance=0.9 → 1 + 0.9 + 0.3 = 2.2.
+  const score = scoreItem(item, {
+    promptTokens: ['a'],
+    now,
+    relevanceFn: () => 0.2
+  });
+  assert.ok(Math.abs(score - 2.2) < 1e-9);
+});
+
+test('seam: relevanceFn receives (item, ctx) and stays synchronous', () => {
+  const now = new Date('2026-04-23T00:00:00Z');
+  const item = { importance: 0, last_accessed_at: '', tokens: ['x'] };
+  let seenItem = null;
+  let seenCtx = null;
+  const ctx = {
+    promptTokens: ['x'],
+    now,
+    relevanceFn: (it, c) => { seenItem = it; seenCtx = c; return 0; }
+  };
+  const score = scoreItem(item, ctx);
+  // recency=0 (empty date), importance=0, relevance=0 → 0. No promise leak.
+  assert.equal(typeof score, 'number');
+  assert.equal(seenItem, item);
+  assert.equal(seenCtx, ctx);
+});
+
+test('seam: non-function relevanceFn is ignored → jaccard fallback', () => {
+  const now = new Date('2026-04-23T00:00:00Z');
+  const item = { importance: 9, last_accessed_at: now.toISOString(), tokens: ['a', 'b'] };
+  const score = scoreItem(item, { promptTokens: ['a'], now, relevanceFn: 'not-a-fn' });
+  assert.ok(Math.abs(score - 2.65) < 1e-9);
+});
