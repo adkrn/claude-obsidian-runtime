@@ -157,6 +157,28 @@ export function normalizePathValue(value) {
     .replace(/^\/+|\/+$/g, '');
 }
 
+/**
+ * True iff two paths resolve to the same directory on disk.
+ *
+ * Guards the musicGame-style misconfig where vaultRoot and contextRoot point at
+ * the same folder (differing only by drive-letter case, separators, or trailing
+ * slash). Mirroring a directory onto itself makes obsidian-sync treat its own
+ * exclude-only artifact folders (Drafts/Generated) as mirror-only orphans and
+ * quarantine real session artifacts. Uses realpath when both exist (absorbs
+ * case/symlink on Windows/macOS), else falls back to resolved+normalized compare.
+ */
+export function isSamePath(a, b) {
+  if (!a || !b) return false;
+  const resolve = (p) => {
+    try {
+      return normalizePathValue(fs.realpathSync.native(p)).toLowerCase();
+    } catch {
+      return normalizePathValue(path.resolve(String(p))).toLowerCase();
+    }
+  };
+  return resolve(a) === resolve(b);
+}
+
 function listMarkdownFiles(basePath) {
   if (!fs.existsSync(basePath)) {
     return [];
@@ -308,6 +330,23 @@ export function syncManagedRoots(projectDir, config, options = {}) {
 
   if (config.vaultAvailable === false) {
     const result = { ok: false, message: 'vault not found, skipping sync', summary: [], skipped: true };
+    if (useCache) {
+      writeSyncCache(projectDir, result);
+    }
+    return result;
+  }
+
+  // vaultRoot === contextRoot: mirroring a directory onto itself would quarantine
+  // its own exclude-only artifact folders (Drafts/Generated). Skip — there is no
+  // separate source to mirror from, and self-prune is pure data risk.
+  if (isSamePath(config.vaultRoot, config.contextRoot)) {
+    const result = {
+      ok: true,
+      message: 'vaultRoot equals contextRoot — mirror skipped (no self-prune)',
+      summary: [],
+      skipped: true,
+      reason: 'vault-equals-context'
+    };
     if (useCache) {
       writeSyncCache(projectDir, result);
     }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { syncManagedRoots } from '../obsidian-sync.mjs';
+import { syncManagedRoots, isSamePath } from '../obsidian-sync.mjs';
 
 function makeWorkspace() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'obs-sync-quarantine-'));
@@ -235,5 +235,65 @@ describe('obsidian-sync quarantine (FIX_obsidian_sync_prune_data_loss)', () => {
     assert.equal(fs.existsSync(qRoot), true, '_quarantine must survive multiple syncs');
     const after = fs.readdirSync(qRoot);
     assert.deepEqual(after.sort(), before.sort(), '_quarantine contents must be stable across syncs');
+  });
+
+  it('case 8: vaultRoot === contextRoot → sync skips, never quarantines its own artifacts', () => {
+    // musicGame-style misconfig: vault and context are the SAME directory.
+    // Mirroring a dir onto itself would treat exclude-only artifact folders
+    // (Drafts/Generated) as mirror-only orphans and quarantine real artifacts.
+    const same = workspace.contextRoot;
+    const config = makeConfig(workspace, {
+      vaultRoot: same,
+      contextRoot: same,
+      mirrorExcludeRoots: ['_quarantine', '07_Decisions/Drafts', '04_Architecture/Generated']
+    });
+    // A freshly-written session artifact lives under an excluded folder.
+    const artifact = path.join(same, '07_Decisions', 'Drafts', '2026-06-26_task.md');
+    writeFile(artifact, '# Decision\nreal session artifact');
+
+    const result = syncManagedRoots(workspace.projectDir, config);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.skipped, true, 'sync must skip when vault === context');
+    // The artifact must NOT have been quarantined.
+    assert.equal(fs.existsSync(artifact), true, 'artifact stays in place');
+    assert.equal(
+      fs.existsSync(path.join(same, '_quarantine')),
+      false,
+      'nothing quarantined when vault === context'
+    );
+  });
+
+  it('case 8b: vaultRoot === contextRoot with different case/slashes still skips', () => {
+    const same = workspace.contextRoot;
+    // Same dir, expressed with a trailing slash + altered separators.
+    const altered = `${same.replace(/\\/g, '/')}/`;
+    const config = makeConfig(workspace, { vaultRoot: altered, contextRoot: same });
+    const artifact = path.join(same, '07_Decisions', 'Drafts', 'x.md');
+    writeFile(artifact, 'x');
+
+    const result = syncManagedRoots(workspace.projectDir, config);
+    assert.equal(result.skipped, true, 'path equivalence must survive separator/trailing differences');
+    assert.equal(fs.existsSync(artifact), true);
+  });
+});
+
+describe('isSamePath', () => {
+  let ws;
+  beforeEach(() => { ws = makeWorkspace(); });
+  afterEach(() => { if (ws) rmrf(ws.root); ws = null; });
+
+  it('true for identical paths', () => {
+    assert.equal(isSamePath(ws.contextRoot, ws.contextRoot), true);
+  });
+  it('true across separator / trailing-slash differences (same real dir)', () => {
+    assert.equal(isSamePath(ws.contextRoot, `${ws.contextRoot.replace(/\\/g, '/')}/`), true);
+  });
+  it('false for genuinely different dirs', () => {
+    assert.equal(isSamePath(ws.contextRoot, ws.vaultRoot), false);
+  });
+  it('false when one path is empty', () => {
+    assert.equal(isSamePath('', ws.contextRoot), false);
+    assert.equal(isSamePath(ws.contextRoot, ''), false);
   });
 });
