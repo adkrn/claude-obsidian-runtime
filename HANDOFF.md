@@ -102,6 +102,10 @@ Claude는 세션 간 영속 메모리가 없음. 매번 같은 파일 탐색, �
 - `templates/hooks/*.sh` — hook 정의 6개 (활성 4개. session-end/stop 비활성)
 - `bin/cli.mjs` — 엔트리포인트
 
+### 🧭 "앞으로 어디로 가야 하나?" / "유사 프로젝트는 어떻게 했나?" / 검색·메모리 개선 기획
+
+→ [docs/research/00_INDEX.md](./docs/research/00_INDEX.md) — 유사 프로젝트 지형도(GitHub/arXiv/HF) + 코드기준 갭분석 + 단계 로드맵 (3문서). 다음 방향 기획 시 시작점.
+
 ### 🔴 "에러 나는데?" / "doctor FAIL" / "~이럴 때"
 
 → docs/QUICKSTART.md §6 (자주 나는 에러 6종)
@@ -207,7 +211,69 @@ Claude는 세션 간 영속 메모리가 없음. 매번 같은 파일 탐색, �
 - **trigger_keywords surrogate 손상**: Pasim62 일부 lesson 의 trigger_keywords 에 깨진 유니코드(surrogate `\udcec`)가 있음. 검색 품질 저하 가능. jsonl 재인코딩 시 Python 에서 터짐(Node 는 OK).
 - procedure repeatThreshold 3→2, worklog `--close` 의존 완화, architecture detectArchitectureChanges 자동감지, 기존 draft 방치분 active 재인덱싱.
 
-**다음 단계 우선순위:** ~~(2-B) lesson update/skip + architecture/troubleshooting 세션작성~~ **← D-26 완료**. (2-C) procedure/worklog/architecture-detect 코드로직 + 기존 draft 방치분 active 재인덱싱 + toDateStamp 버그. (3) 검색 경량개선(trigger_keywords 가중+BM25/IDF+char n-gram, 임베딩 seam 예약 — `task-start.mjs:80 buildLessonReadFirst`, relevance `retrieval-scoring.mjs:226`, knowledgeHits `context-resolver.mjs:121` 별도). **재료(산출물)가 멀쩡해진 뒤라야 검색이 의미 있음.**
+**다음 단계 우선순위:** ~~(2-B) lesson update/skip + architecture/troubleshooting 세션작성~~ **← D-26 완료**. (2-C) procedure/worklog/architecture-detect 코드로직 + 기존 draft 방치분 active 재인덱싱 + toDateStamp 버그. ~~(3) 검색 경량개선~~ **← Phase 0/A/B/C 완료(아래 §검색 경량개선)**. **재료(산출물)가 멀쩡해진 뒤라야 검색이 의미 있음.**
+
+---
+
+## §검색 경량개선 (Phase 0/A/B/C 완료 — 임베딩 안 씀, 의존성 0)
+
+**완료. 브랜치 `feat/lesson-retrieval-relevance`. 526 tests green.** 근거: `docs/research/02_GAP_ANALYSIS.md`(G1~G3) + `03_ROADMAP.md`(Phase A~C). 임베딩은 lesson 수백 개 + 한↔영 미스 실측 시에만(Phase E, 같은 seam 에 코사인 무중단 주입).
+
+| Phase | 갭 | 작업 | 핵심 파일 |
+|---|---|---|---|
+| **0 청소** | G4 | 보일러플레이트 54건 제거(50 strip + 4 BP-only drop→quarantine). 5프로젝트 jsonl, `.bak` 백업, 경로 화이트리스트(글로벌 볼트 미접근) | `scripts/clean-boilerplate-rules.mjs` (+20 tests) |
+| **A seam** | G1 | `scoreItem` relevance 를 `ctx.relevanceFn?(item,ctx):jaccard` 로. **미주입 시 jaccard → 기존 테스트 byte-identical 보존** | `core/memory/retrieval-scoring.mjs:226` |
+| **A tk** | G1 | trigger_keywords 점수 반영(게이트뿐 아니라 랭킹). `relevance = base + W_TK*overlap(prompt,tk)/|prompt|` | `core/memory/similarity.mjs::improvedSimilarity`, 배선 `task-start.mjs::buildLessonReadFirst` |
+| **B IDF** | G2 | `buildIdf`(smoothed `ln((N+1)/(df+1))+1`) 1회 빌드 + `bm25Lite`(self-score 정규화 0~1). 보일러플레이트 고빈도 토큰 자동 억제. base 가 jaccard→bm25 | `similarity.mjs::buildIdf/bm25Lite` |
+| **B n-gram** | G3 | `charTrigrams`(NFC+lowercase+공백collapse, codepoint-safe) + `trigramJaccard`. "씬전환"vs"씬 전환" 흡수. raw promptText vs title+summary, W_NG=0.15 | `similarity.mjs::charTrigrams/trigramJaccard` |
+| **C eval** | 측정 | Pasim62 64 lesson × 40 실프롬프트 A/B replay | (1회성 scratchpad) |
+
+**측정 결과 (Pasim62 A/B replay):**
+- **nonzero relevance 쌍 37.4% → 63.4%** (개선이 더 많은 lesson 에 변별 신호 부여 = recall 직결).
+- relevance 스케일 mean ~1.7x, **max 0.64 → 1.29** (꼬리에 집중 — 강매칭만 증폭).
+- 분포 p50=0.002 / p95=0.221 / max=1.29. top-1 변동 8%(40중 3), top-3 83% 유지 → **외과적 개선**(churn 아님). **top-1 변동 3건 전부 trigger_keywords lesson 승격** = G1 의도대로.
+- **결정: `alphaRelevance=1.5` 유지**(mean 거의 불변→전형 항목 3축 균형 보존, 개선은 p95+ 꼬리에 집중. max 기여 1.93 vs recency+importance ceiling 2.0 균형). W_TK=0.5/W_NG=0.15 기본 유지(전부 manifest `retrievalWeights` override 가능 — 신규 키 `triggerKeywordWeight`/`trigramWeight` 스키마 추가).
+
+**가중치 합성식 (`improvedSimilarity`):** `base(bm25-lite, idf미공급시 jaccard) + W_TK*tkOverlap + W_NG*trigramJaccard`. 전부 0~1(합은 가산이라 강매칭 >1 가능, 의도). 동기·순수·의존성 0. MMR(`mmr.mjs:64`)은 **1차 jaccard 유지**(이득/위험 비대칭, 2차 보류 — research 결론과 일치).
+
+**제약 준수:** scoreItem/scoreItems/applyMMR 동기 시그니처 보존. 미주입 폴백으로 기존 테스트 불변. 한↔영 동의어 사전은 **제외**(trigram 도 0 → 소형 사전 필요, 실제 미스 로그 본 뒤 Phase B 후속).
+
+**미해결/후속:**
+- **실 `eval-retrieval` 하네스는 stored 레코드(옛 스코어러) 기반**이라 production 델타는 새 task-start 누적(sampleCount≥5) 후 측정. 현재 Pasim62 sampleCount=21 이지만 readFirst↔file_read 이벤트 교집합 0 → precision/recall 0(역사 데이터 한계, 내 변경 무관). **A/B replay 가 현 시점 유효 측정.**
+- 청소로 productSurvey/musicGame lessons.jsonl 이 **빈 파일(0행)**됨(원래 1~2개가 전부 BP-only). drop 4행은 `.quarantine.jsonl` 에 보존.
+- knowledgeHits 경로(`context-resolver.mjs:121 scoreKnowledgeRow`)는 **별도 카운트기반 스코어러** — 이번 범위 밖(PATH 1). decision/architecture 는 trigger_keywords 비어 G1 수혜 없음(G2 IDF 가 일부 커버).
+
+---
+
+## §임베딩 사전진단 (검색 파이프라인 + 데이터 건강도, 다음 세션 출발점)
+
+**임베딩 도입 직전, "수정된 산출물 기반에 문제 없는지" 진단 완료.** 결론: 생성품질은 정상, 옛 데이터 청소(2-C)가 임베딩 전 선결과제.
+
+**검색 파이프라인 지도 (3갈래 병합):**
+- **PATH 1** context-resolver: `loadKnowledgeRows`(`context-resolver.mjs:99`)→`scoreKnowledgeRow`(`:121`, 토큰겹침+scope+recency)→`resolveKnowledgeHits`(`:217`). lessons/decisions/troubleshooting 로드.
+- **PATH 2 (핵심)** `task-start.mjs:80 buildLessonReadFirst`→`scoreItems`(`core/memory/retrieval-scoring.mjs:253`)→`scoreItem`(`:217`): **applicable_when 게이트(`evaluateGate:139`, D-19) → 3축(recency`:51`/importance`:57`/relevance=`jaccardSimilarity:64`) → MMR(`mmr.mjs:36`, D-20) → emitSortByPath(캐시친화)**.
+- **relevance 는 `item.tokens` 사용**(`retrieval-scoring.mjs:226`), trigger_keywords 가 아님. trigger_keywords/applicable_when 은 **게이트에서만**(`:174`).
+
+**임베딩 seam (충돌 없이 끼울 2지점):**
+1. `retrieval-scoring.mjs:226` relevance: `jaccardSimilarity(promptTokens, item.tokens)` → `cosineSimilarity(promptEmbedding, item.embedding)` (조건부 폴백 — `ctx.embeddingEnabled && item.embedding` 없으면 자카드 유지).
+2. `mmr.mjs:64` 다양성: 자카드→코사인(λ 0.2→0.5 재조정 필요, 코사인은 연속값).
+- **applicable_when 게이트(D-19)는 그대로** — 구조필터(언어/scope/path)라 의미필터(임베딩)와 직교, double-filter 강화.
+- **KV-cache(D-20) 주의**: 임베딩 model-version 바뀌면 readFirst 순서 변동→cache miss. `runtime-manifest.json` 에 `embeddingModelVersion` 핀 + stable-stringify 에 포함하면 의도적 수용. 같은 버전 내 byte-identical 유지.
+
+**데이터 건강도 진단 결과 (전 연동 프로젝트 lessons.jsonl):**
+| 프로젝트 | lessons | summary빈 | tokens빈 | draft | **보일러플레이트 잔존** |
+|---|---|---|---|---|---|
+| Pasim62 | 64 | 0 | 0 | 0 | **10 (16%)** |
+| talkSim | 57 | 0 | 0 | 0 | **34 (60%)** |
+| magicDraft | 7 | 0 | 0 | 0 | **7 (100%)** |
+| productSurveyEngine | 2 | 0 | 0 | 0 | **2 (100%)** |
+| musicGame | 1 | 0 | 0 | 0 | **1 (100%)** |
+
+- ✅ **생성품질 정상**: summary/tokens 전부 채워짐, draft 0, 새 산출물(D-26 후)은 보일러플레이트 0.
+- ✅ **문제①(선결) 해결됨 — Phase 0 청소 완료(2026-06-26).** 54건 보일러플레이트(`read read_first notes before writing a plan`) 전부 제거(50 strip + 4 BP-only drop→`.quarantine.jsonl`). 5프로젝트 jsonl BP=0 재검증, Pasim62 trigger_keywords 515 보존, `.bak` 백업. `scripts/clean-boilerplate-rules.mjs`. **볼트 마크다운(08_Lessons/*.md)은 별도 opt-in 과제로 잔존**(실 BP 는 글로벌 `C:\Obsidian\TalkUp` 161파일, 활성 jsonl 과 디커플드 — 스크립트에 markdown 처리 함수는 구현·테스트됨, 미실행). 임베딩 도입 시 벡터화 재료는 이제 깨끗.
+- ⚠️ **문제②(영향 작음)**: decision/architecture 는 trigger_keywords=[]/applicable_when={} (세션작성 경로가 게이트필드 미생성) → applicable_when 게이트 무력. 단 **tokens 채워져 검색은 정상**. 임베딩 도입 시 tokens→벡터라 자연 해소.
+
+**다음 작업 (사용자 합의):** (a) 보일러플레이트 일괄 청소 — 전 프로젝트 lessons.jsonl + 볼트문서의 rules 에서 `read read_first notes` 줄만 제거(세션 rules 보존), 백업 후. (b) 청소된 재료로 임베딩 도입(seam 2지점, model-version 핀). (c) 임베딩 자체 구현은 plan mode 권장 — API키/모델선택 등 외부의존 결정 필요(또는 로컬 임베딩).
 
 ---
 
