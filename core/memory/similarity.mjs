@@ -162,6 +162,53 @@ export function bm25Lite(queryTokens, docTokens, idf, opts = {}) {
   return score > 1 ? 1 : score;
 }
 
+// ── char-trigram (Phase B — G3, morphological / spacing variants) ─
+
+/**
+ * Set of 3-codepoint shingles over a normalized string.
+ *
+ * Normalization: NFC + lowercase + internal-whitespace collapse (so
+ * "씬 전환" → "씬전환", the motivating case). Iterates by code point so
+ * surrogate pairs (emoji etc.) are not split. Strings shorter than 3 code
+ * points yield a single whole-string shingle (so 2-char queries still match
+ * something). Empty / whitespace-only → empty set.
+ *
+ * @param {string} str
+ * @returns {Set<string>}
+ */
+export function charTrigrams(str) {
+  const norm = String(str == null ? '' : str)
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/\s+/g, '');
+  const chars = [...norm];
+  const out = new Set();
+  if (chars.length === 0) return out;
+  if (chars.length < 3) {
+    out.add(chars.join(''));
+    return out;
+  }
+  for (let i = 0; i + 3 <= chars.length; i += 1) {
+    out.add(chars[i] + chars[i + 1] + chars[i + 2]);
+  }
+  return out;
+}
+
+/**
+ * Jaccard over char trigrams of two strings. 0..1. Either side empty → 0
+ * (mirrors token jaccard's both-empty=0 convention).
+ */
+export function trigramJaccard(a, b) {
+  const sa = charTrigrams(a);
+  const sb = charTrigrams(b);
+  if (sa.size === 0 || sb.size === 0) return 0;
+  let inter = 0;
+  for (const t of sa) if (sb.has(t)) inter += 1;
+  const union = sa.size + sb.size - inter;
+  if (union === 0) return 0;
+  return inter / union;
+}
+
 function lowerStringSet(arr) {
   const out = new Set();
   if (!Array.isArray(arr)) return out;

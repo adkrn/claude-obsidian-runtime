@@ -85,6 +85,44 @@ test('buildLessonReadFirst: W_TK=0 override neutralizes trigger_keywords', () =>
   assert.equal(result[0].lessonId, 'no-tk');
 });
 
+test('buildLessonReadFirst: char-trigram lifts a spacing-variant lesson (G3)', () => {
+  // Prompt "씬전환" tokenizes differently from a lesson titled "씬 전환", so token
+  // overlap is weak. The char-trigram aux term (fed via promptText) should let the
+  // spacing-variant lesson win topN=1 over an unrelated peer.
+  const variant = {
+    ...baseLesson('variant'),
+    title: '씬 전환 처리',
+    summary: '씬 전환',
+    tokens: ['처리'],
+    path: '08_Lessons/variant.md',
+    sourceDoc: '08_Lessons/variant.md'
+  };
+  const unrelated = {
+    ...baseLesson('unrelated'),
+    title: 'audio mixer',
+    summary: 'volume fade',
+    tokens: ['audio', 'mixer'],
+    path: '08_Lessons/unrelated.md',
+    sourceDoc: '08_Lessons/unrelated.md'
+  };
+  const dir = makeProject([unrelated, variant]);
+
+  const result = buildLessonReadFirst({
+    projectDir: dir,
+    promptTokens: ['씬전환'],
+    promptText: '씬전환 구현',
+    matchedScopes: ['repo'],
+    candidatePaths: [],
+    manifest: null,
+    contextRoot: '',
+    topN: 1,
+    now: NOW
+  });
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].lessonId, 'variant');
+});
+
 test('buildLessonReadFirst: lessons without trigger_keywords still work (graceful)', () => {
   // No trigger_keywords anywhere → behaves like the old jaccard path, no crash.
   const a = baseLesson('a');

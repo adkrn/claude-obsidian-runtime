@@ -5,6 +5,8 @@ import {
   improvedSimilarity,
   buildIdf,
   bm25Lite,
+  charTrigrams,
+  trigramJaccard,
   DEFAULT_SIMILARITY_WEIGHTS
 } from '../similarity.mjs';
 
@@ -174,4 +176,56 @@ test('improvedSimilarity: idf+bm25 opts switch base off jaccard', () => {
   const sim = improvedSimilarity(ctx, item, { idf, avgdl, bm25: bm25Lite });
   // base now bm25 (not jaccard); strong match should be high (~1)
   assert.ok(sim > 0.5, `expected strong bm25 base, got ${sim}`);
+});
+
+// ── charTrigrams / trigramJaccard (Phase B — G3) ─────────────────
+
+test('charTrigrams: basic shingling, whitespace collapsed', () => {
+  // "씬 전환" → whitespace collapsed → "씬전환" → trigram {씬전환}
+  const a = charTrigrams('씬전환');
+  const b = charTrigrams('씬 전환');
+  assert.deepEqual([...a].sort(), [...b].sort());
+});
+
+test('charTrigrams: string shorter than 3 → single whole-string shingle', () => {
+  assert.deepEqual([...charTrigrams('ab')], ['ab']);
+  assert.deepEqual([...charTrigrams('x')], ['x']);
+});
+
+test('charTrigrams: empty / whitespace-only → empty set', () => {
+  assert.equal(charTrigrams('').size, 0);
+  assert.equal(charTrigrams('   ').size, 0);
+});
+
+test('charTrigrams: case-insensitive', () => {
+  assert.deepEqual([...charTrigrams('ABC')], [...charTrigrams('abc')]);
+});
+
+test('charTrigrams: does not throw on surrogate-pair input', () => {
+  assert.doesNotThrow(() => charTrigrams('a🎵b🎶c'));
+});
+
+test('trigramJaccard: "씬전환" vs "씬 전환" → 1.0 (the motivating case)', () => {
+  assert.ok(Math.abs(trigramJaccard('씬전환', '씬 전환') - 1) < 1e-9);
+});
+
+test('trigramJaccard: identical → 1, disjoint → 0, one empty → 0', () => {
+  assert.equal(trigramJaccard('hello', 'hello'), 1);
+  assert.equal(trigramJaccard('abcdef', 'uvwxyz'), 0);
+  assert.equal(trigramJaccard('', 'abc'), 0);
+  assert.equal(trigramJaccard('', ''), 0);
+});
+
+test('improvedSimilarity: trigram term lifts a spacing-variant match', () => {
+  // Token jaccard is 0 (different tokens after split), but the raw text trigram
+  // overlap is high → W_NG term lifts it above 0.
+  const ctx = { promptTokens: ['씬전환'], promptText: '씬전환' };
+  const item = { tokens: ['씬', '전환'], title: '씬 전환', summary: '' };
+  const trigram = (c, it) => trigramJaccard(
+    c.promptText || '',
+    `${it.title || ''} ${it.summary || ''}`
+  );
+  const withNg = improvedSimilarity(ctx, item, { trigram });
+  const withoutNg = improvedSimilarity(ctx, item, {});
+  assert.ok(withNg > withoutNg, `trigram should lift: ${withNg} > ${withoutNg}`);
 });

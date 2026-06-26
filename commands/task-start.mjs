@@ -35,7 +35,7 @@ import {
 } from '../core/context-resolver.mjs';
 import { applyMMR, emitSortByPath } from '../core/memory/mmr.mjs';
 import { scoreItems } from '../core/memory/retrieval-scoring.mjs';
-import { improvedSimilarity, buildIdf, bm25Lite } from '../core/memory/similarity.mjs';
+import { improvedSimilarity, buildIdf, bm25Lite, trigramJaccard } from '../core/memory/similarity.mjs';
 import { bumpHitCounts } from '../core/memory/hit-counts.mjs';
 import { generateInitialTodoList, writeTodoFile } from '../core/todo-writer.mjs';
 import { loadObsidianConfig } from '../core/obsidian-config.mjs';
@@ -81,6 +81,7 @@ function loadLessonRows(projectDir) {
 export function buildLessonReadFirst({
   projectDir,
   promptTokens,
+  promptText = '',
   matchedScopes,
   candidatePaths,
   manifest,
@@ -113,7 +114,16 @@ export function buildLessonReadFirst({
   // boilerplate tokens get low idf → suppressed; rare discriminating tokens win.
   // The relevanceFn closure captures this idf map (no per-item rescan).
   const { idf, avgdl, n } = buildIdf(lessons.map((l) => (Array.isArray(l.tokens) ? l.tokens : [])));
-  const simOpts = { weights: similarityWeights, idf, avgdl, n, bm25: bm25Lite };
+
+  // Phase B (G3) — char-trigram auxiliary, absorbs spacing / morphological
+  // variants ("씬전환" vs "씬 전환") that token jaccard misses. Compares raw
+  // prompt text against the lesson's title+summary. Small weight (W_NG=0.15)
+  // so the token signal dominates. Skipped when no prompt text is available.
+  const trigram = promptText
+    ? (_ctx, item) => trigramJaccard(promptText, `${item.title || ''} ${item.summary || ''}`)
+    : undefined;
+
+  const simOpts = { weights: similarityWeights, idf, avgdl, n, bm25: bm25Lite, trigram };
 
   // 1 + 2. F gate + 3-axis score (scoreItem handles both inside scoreItems).
   const ctx = {
@@ -204,6 +214,7 @@ function defaultResolveContext({ projectDir, task, limit = 6 }) {
   const lessonReadFirst = buildLessonReadFirst({
     projectDir,
     promptTokens,
+    promptText: task,
     matchedScopes,
     candidatePaths,
     manifest,
