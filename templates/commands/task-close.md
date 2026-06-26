@@ -80,15 +80,15 @@ node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind troubleshooting
 
 - **같은 문제 없음 → create**:
   ```bash
-  echo '{"mode":"create","troubleshooting":{"symptom":"<무슨 증상>","cause":"<실제 원인>","fix":"<수정 방법>","prevention":"<재발 방지 규칙>","verification":"<어떻게 검증했나>","relatedFiles":[],"scope":""}}' | node "$CLAUDE_RUNTIME_HOME/commands/troubleshoot-write.mjs"
+  echo '{"mode":"create","troubleshooting":{"symptom":"<무슨 증상>","cause":"<실제 원인>","fix":"<수정 방법>","prevention":"<재발 방지 규칙>","verification":"<어떻게 검증했나>","relatedFiles":[],"scope":"","trigger_keywords":[],"applicable_when":{"language":[],"kind":["troubleshooting"],"task_type":[],"scope_id":""}}}' | node "$CLAUDE_RUNTIME_HOME/commands/troubleshoot-write.mjs"
   ```
 - **같은 문제 있고 이미 충분 → skip**.
 - **같은 문제 있고 보완 필요 → update**: 기존 문서(목록의 sourceDoc)를 읽고 통합한 전체본을 같은 id로 교체.
   ```bash
-  echo '{"mode":"update","troubleshooting":{"id":"<기존 id>","symptom":"...","cause":"...","fix":"...","relatedFiles":[]}}' | node "$CLAUDE_RUNTIME_HOME/commands/troubleshoot-write.mjs"
+  echo '{"mode":"update","troubleshooting":{"id":"<기존 id>","symptom":"...","cause":"...","fix":"...","relatedFiles":[],"trigger_keywords":[],"applicable_when":{}}}' | node "$CLAUDE_RUNTIME_HOME/commands/troubleshoot-write.mjs"
   ```
 
-작성 기준: symptom(필수)은 증상, cause/fix/prevention/verification은 당신이 직접 채움(CURATOR_TODO 마커 없음). 세션이 쓴 troubleshooting은 바로 active.
+작성 기준: symptom(필수)은 증상, cause/fix/prevention/verification은 당신이 직접 채움(CURATOR_TODO 마커 없음). **`trigger_keywords`를 꼭 채워라** — 이 문제를 다음에 어떤 단어로 검색할지(증상·에러·모듈명 5~10개). 비우면 검색 게이트·랭킹에 기여하지 못한다(lesson/decision/architecture와 동일 신호). 세션이 쓴 troubleshooting은 바로 active.
 
 ## 1.7. architecture를 직접 작성 (D-26 — create/update/skip)
 

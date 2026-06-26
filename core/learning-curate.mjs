@@ -830,6 +830,11 @@ function buildSessionTroubleshootingCandidate({ task, scope, dateStamp, config, 
     summary,
     relatedFiles: files,
     checks: [],
+    // 검색 신호 (G1): 세션이 채운 trigger_keywords / applicable_when 보존.
+    trigger_keywords: Array.isArray(override.trigger_keywords) ? override.trigger_keywords : [],
+    applicable_when: (override.applicable_when && typeof override.applicable_when === 'object')
+      ? override.applicable_when
+      : {},
     relativePath: buildRelativeDocPath('troubleshooting', scope, dateStamp, task.taskId, config),
     content: `---
 title: Troubleshooting ${dateStamp} (${task.taskId})
@@ -950,6 +955,11 @@ export function writeSessionTroubleshooting(projectDir, options = {}, config = {
     prevention: trouble.prevention,
     verification: trouble.verification,
     relatedFiles: Array.isArray(trouble.relatedFiles) ? trouble.relatedFiles : [],
+    // 검색 신호 (G1): 세션이 채운 trigger_keywords / applicable_when 을 보존해 게이트·점수에 기여하게 한다.
+    trigger_keywords: Array.isArray(trouble.trigger_keywords) ? trouble.trigger_keywords : [],
+    applicable_when: (trouble.applicable_when && typeof trouble.applicable_when === 'object')
+      ? trouble.applicable_when
+      : {},
     id: mode === 'update' ? trouble.id : undefined
   };
   const candidate = buildSessionTroubleshootingCandidate({ task, scope, dateStamp, config, override });

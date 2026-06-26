@@ -23,6 +23,8 @@
  *       "verification": "어떻게 검증했나",
  *       "relatedFiles": [],
  *       "scope": "",
+ *       "trigger_keywords": ["검색용 키워드", "..."],
+ *       "applicable_when": { "language": [], "kind": ["troubleshooting"], "task_type": [], "scope_id": "" },
  *       "id": "<update 시 기존 troubleshooting id>"
  *     }
  *   }

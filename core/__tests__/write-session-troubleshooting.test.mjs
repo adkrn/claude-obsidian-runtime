@@ -136,6 +136,40 @@ describe('writeSessionTroubleshooting (D-26)', () => {
     const rows = loadJsonl(path.join(getRuntimePaths(dir).knowledgeRoot, 'troubleshooting.jsonl'));
     assert.equal(rows[0].scope, 'backend');
   });
+
+  it('persists session-provided trigger_keywords and applicable_when into the jsonl row (G1)', () => {
+    const dir = sandbox();
+    writeTask(dir, makeTask());
+    const v = captureVault();
+    const r = writeSessionTroubleshooting(dir, {
+      taskId: '20260625-1500-trb', mode: 'create',
+      troubleshooting: {
+        ...goodTrouble,
+        trigger_keywords: ['씬전환', 'InputActionMap', 'EnableInput', 'OnSceneReady'],
+        applicable_when: { language: ['csharp'], kind: ['troubleshooting'], task_type: ['debug'], scope_id: 'unity' }
+      }
+    }, v.config);
+
+    assert.equal(r.ok, true);
+    const rows = loadJsonl(path.join(getRuntimePaths(dir).knowledgeRoot, 'troubleshooting.jsonl'));
+    assert.equal(rows.length, 1);
+    assert.deepEqual(rows[0].trigger_keywords, ['씬전환', 'InputActionMap', 'EnableInput', 'OnSceneReady']);
+    assert.equal(rows[0].applicable_when.language[0], 'csharp');
+    assert.equal(rows[0].applicable_when.scope_id, 'unity');
+  });
+
+  it('defaults trigger_keywords to [] and applicable_when to {} when omitted (back-compat)', () => {
+    const dir = sandbox();
+    writeTask(dir, makeTask());
+    const v = captureVault();
+    const r = writeSessionTroubleshooting(dir, {
+      taskId: '20260625-1500-trb', mode: 'create', troubleshooting: goodTrouble
+    }, v.config);
+    assert.equal(r.ok, true);
+    const rows = loadJsonl(path.join(getRuntimePaths(dir).knowledgeRoot, 'troubleshooting.jsonl'));
+    assert.deepEqual(rows[0].trigger_keywords, []);
+    assert.deepEqual(rows[0].applicable_when, {});
+  });
 });
 
 describe('listSessionArtifacts (troubleshooting)', () => {
