@@ -216,6 +216,25 @@ test('trigramJaccard: identical → 1, disjoint → 0, one empty → 0', () => {
   assert.equal(trigramJaccard('', ''), 0);
 });
 
+test('recall guard: improved surfaces a tk-relevant lesson that jaccard ranks below noise', () => {
+  // Eval finding (Pasim62 replay): nonzero relevance pairs jumped 37%→63% and
+  // every top-1 change promoted a trigger_keywords lesson. Lock that in: a lesson
+  // whose trigger_keywords match the prompt must outscore a lesson with slightly
+  // higher token overlap but no tk — otherwise the session re-searches (recall loss).
+  const corpus = [['render', 'pass'], ['ui', 'layout'], ['audio', 'mix']];
+  const { idf, avgdl, n } = buildIdf(corpus);
+  const ctx = { promptTokens: ['shader', 'render'] };
+  const opts = { idf, avgdl, n, bm25: bm25Lite };
+
+  const tkLesson = { tokens: ['render'], trigger_keywords: ['shader', 'render'] };
+  const noTkLesson = { tokens: ['render', 'pass'] }; // higher raw token overlap, no tk
+
+  const tkScore = improvedSimilarity(ctx, tkLesson, opts);
+  const noTkScore = improvedSimilarity(ctx, noTkLesson, opts);
+  assert.ok(tkScore > noTkScore,
+    `tk lesson(${tkScore.toFixed(3)}) must outrank no-tk peer(${noTkScore.toFixed(3)})`);
+});
+
 test('improvedSimilarity: trigram term lifts a spacing-variant match', () => {
   // Token jaccard is 0 (different tokens after split), but the raw text trigram
   // overlap is high → W_NG term lifts it above 0.
