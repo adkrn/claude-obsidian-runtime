@@ -35,7 +35,7 @@ import {
 } from '../core/context-resolver.mjs';
 import { applyMMR, emitSortByPath } from '../core/memory/mmr.mjs';
 import { scoreItems } from '../core/memory/retrieval-scoring.mjs';
-import { improvedSimilarity } from '../core/memory/similarity.mjs';
+import { improvedSimilarity, buildIdf, bm25Lite } from '../core/memory/similarity.mjs';
 import { bumpHitCounts } from '../core/memory/hit-counts.mjs';
 import { generateInitialTodoList, writeTodoFile } from '../core/todo-writer.mjs';
 import { loadObsidianConfig } from '../core/obsidian-config.mjs';
@@ -109,6 +109,12 @@ export function buildLessonReadFirst({
     similarityWeights.trigramWeight = manifest.retrievalWeights.trigramWeight;
   }
 
+  // Phase B (G2) — IDF over the lesson corpus, built ONCE per call. High-frequency
+  // boilerplate tokens get low idf → suppressed; rare discriminating tokens win.
+  // The relevanceFn closure captures this idf map (no per-item rescan).
+  const { idf, avgdl, n } = buildIdf(lessons.map((l) => (Array.isArray(l.tokens) ? l.tokens : [])));
+  const simOpts = { weights: similarityWeights, idf, avgdl, n, bm25: bm25Lite };
+
   // 1 + 2. F gate + 3-axis score (scoreItem handles both inside scoreItems).
   const ctx = {
     promptTokens,
@@ -118,9 +124,10 @@ export function buildLessonReadFirst({
     activeScopes: matchedScopes,
     gateMode: 'exclude',
     now: now instanceof Date ? now : new Date(),
-    // Phase A seam: trigger_keywords now contribute to the relevance score,
-    // not just the applicable_when gate (G1). Jaccard base preserved.
-    relevanceFn: (item) => improvedSimilarity(ctx, item, { weights: similarityWeights })
+    // Phase A+B seam: trigger_keywords (G1) + IDF-weighted base (G2) contribute
+    // to the relevance score, not just the applicable_when gate. Jaccard is the
+    // fallback only when no idf is supplied (e.g. empty corpus).
+    relevanceFn: (item) => improvedSimilarity(ctx, item, simOpts)
   };
   const scored = scoreItems(lessons, ctx);
 

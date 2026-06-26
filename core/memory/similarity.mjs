@@ -46,6 +46,122 @@ function resolveWeights(overrides) {
   };
 }
 
+// ── IDF / BM25-lite (Phase B — G2) ───────────────────────────────
+
+export const DEFAULT_BM25 = Object.freeze({ k1: 1.5, b: 0.75 });
+
+/**
+ * Build a smoothed IDF map + corpus stats from an array of token arrays.
+ *
+ *   idf(t) = ln((N + 1) / (df + 1)) + 1
+ *
+ * The +1 smoothing keeps idf positive even for a token in every doc, and
+ * defined for unseen tokens (df=0 → ln(N+1)+1). Doc length uses the token
+ * array length (already a deduped set in this codebase, capped at 24).
+ *
+ * @param {string[][]} corpus
+ * @returns {{ idf: Map<string,number>, avgdl: number, n: number }}
+ */
+export function buildIdf(corpus) {
+  const docs = Array.isArray(corpus) ? corpus.filter(Array.isArray) : [];
+  const n = docs.length;
+  if (n === 0) return { idf: new Map(), avgdl: 0, n: 0 };
+
+  const df = new Map();
+  let totalLen = 0;
+  for (const doc of docs) {
+    totalLen += doc.length;
+    const seen = new Set();
+    for (const raw of doc) {
+      if (typeof raw !== 'string') continue;
+      const t = raw.toLowerCase();
+      if (seen.has(t)) continue;
+      seen.add(t);
+      df.set(t, (df.get(t) || 0) + 1);
+    }
+  }
+
+  const idf = new Map();
+  for (const [t, d] of df) {
+    idf.set(t, Math.log((n + 1) / (d + 1)) + 1);
+  }
+  return { idf, avgdl: totalLen / n, n };
+}
+
+function idfOf(idf, token, n) {
+  if (idf instanceof Map && idf.has(token)) return idf.get(token);
+  // Unseen token: treat as df=0 → ln((N+1)/1)+1. Falls back to a small positive
+  // when N unknown so an out-of-corpus query token still contributes sensibly.
+  const N = Number.isFinite(n) ? n : 1;
+  return Math.log(N + 1) + 1;
+}
+
+/**
+ * BM25-lite relevance of a query against a doc, self-score normalized to [0,1].
+ *
+ * Standard BM25 term sum over query∩doc, then divided by the query's self-score
+ * (query scored against itself as the ideal doc) so the best achievable match
+ * maps to ~1.0 regardless of query length or corpus idf magnitude — stable
+ * across corpora (no fixed ceiling drift).
+ *
+ * Note: in this codebase `tokens` is a deduped set, so tf is effectively 1 and
+ * the k1 saturation term degenerates to a constant — bm25Lite ≈ IDF-weighted
+ * overlap here. That is intentional and still far better than plain Jaccard
+ * (it kills high-frequency boilerplate tokens via low idf — G2).
+ *
+ * @param {string[]} queryTokens
+ * @param {string[]} docTokens
+ * @param {Map<string,number>} idf
+ * @param {{ k1?, b?, avgdl?, n? }} [opts]
+ * @returns {number} 0..1
+ */
+export function bm25Lite(queryTokens, docTokens, idf, opts = {}) {
+  const query = Array.isArray(queryTokens) ? queryTokens : [];
+  const doc = Array.isArray(docTokens) ? docTokens : [];
+  if (query.length === 0 || doc.length === 0) return 0;
+
+  const k1 = Number.isFinite(opts.k1) ? opts.k1 : DEFAULT_BM25.k1;
+  const b = Number.isFinite(opts.b) ? opts.b : DEFAULT_BM25.b;
+  const avgdl = Number.isFinite(opts.avgdl) && opts.avgdl > 0 ? opts.avgdl : doc.length;
+  const n = opts.n;
+
+  const docSet = new Set(doc.map((t) => (typeof t === 'string' ? t.toLowerCase() : t)));
+  const dl = doc.length;
+  const norm = k1 * (1 - b + b * (dl / avgdl));
+
+  // Distinct query tokens (tf in query irrelevant for the doc-side BM25 sum).
+  const qSet = [];
+  const seenQ = new Set();
+  for (const raw of query) {
+    if (typeof raw !== 'string') continue;
+    const t = raw.toLowerCase();
+    if (seenQ.has(t)) continue;
+    seenQ.add(t);
+    qSet.push(t);
+  }
+  if (qSet.length === 0) return 0;
+
+  // BM25 with doc-side tf=1 (deduped set): term = idf * (1*(k1+1))/(1 + norm).
+  const tfPart = (k1 + 1) / (1 + norm);
+  let raw = 0;
+  for (const t of qSet) {
+    if (docSet.has(t)) raw += idfOf(idf, t, n) * tfPart;
+  }
+  if (raw === 0) return 0;
+
+  // Self-score: query as its own ideal doc (same length → same norm baseline).
+  // Use the query's own length for the ideal doc so normalization is per-query.
+  const selfDl = qSet.length;
+  const selfNorm = k1 * (1 - b + b * (selfDl / avgdl));
+  const selfTfPart = (k1 + 1) / (1 + selfNorm);
+  let self = 0;
+  for (const t of qSet) self += idfOf(idf, t, n) * selfTfPart;
+  if (self <= 0) return 0;
+
+  const score = raw / self;
+  return score > 1 ? 1 : score;
+}
+
 function lowerStringSet(arr) {
   const out = new Set();
   if (!Array.isArray(arr)) return out;
