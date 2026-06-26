@@ -138,6 +138,41 @@ describe('writeSessionDecision (D-25)', () => {
     const rows = loadJsonl(path.join(getRuntimePaths(dir).knowledgeRoot, 'decisions.jsonl'));
     assert.equal(rows[0].scope, 'backend');
   });
+
+  it('persists session-provided trigger_keywords and applicable_when into the jsonl row (G1)', () => {
+    const dir = sandbox();
+    writeTask(dir, makeTask());
+    const v = captureVault();
+    const r = writeSessionDecision(dir, {
+      taskId: '20260625-1500-dec', mode: 'create',
+      decision: {
+        ...goodDecision,
+        trigger_keywords: ['VR', '조종', '토글', 'SerializeField', 'SampleRiserInput'],
+        applicable_when: { language: ['csharp'], kind: ['decision'], task_type: ['design'], scope_id: 'unity' }
+      }
+    }, v.config);
+
+    assert.equal(r.ok, true);
+    const rows = loadJsonl(path.join(getRuntimePaths(dir).knowledgeRoot, 'decisions.jsonl'));
+    assert.equal(rows.length, 1);
+    // these were dropped before — the row must now carry the search signals.
+    assert.deepEqual(rows[0].trigger_keywords, ['VR', '조종', '토글', 'SerializeField', 'SampleRiserInput']);
+    assert.equal(rows[0].applicable_when.language[0], 'csharp');
+    assert.equal(rows[0].applicable_when.scope_id, 'unity');
+  });
+
+  it('defaults trigger_keywords to [] and applicable_when to {} when omitted (back-compat)', () => {
+    const dir = sandbox();
+    writeTask(dir, makeTask());
+    const v = captureVault();
+    const r = writeSessionDecision(dir, {
+      taskId: '20260625-1500-dec', mode: 'create', decision: goodDecision
+    }, v.config);
+    assert.equal(r.ok, true);
+    const rows = loadJsonl(path.join(getRuntimePaths(dir).knowledgeRoot, 'decisions.jsonl'));
+    assert.deepEqual(rows[0].trigger_keywords, []);
+    assert.deepEqual(rows[0].applicable_when, {});
+  });
 });
 
 describe('listSessionArtifacts (D-25)', () => {

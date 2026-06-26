@@ -19,6 +19,8 @@
  *       "why": ["왜 이 결정인가 / 어떤 대안을 왜 안 골랐나", "..."],
  *       "relatedFiles": [],
  *       "scope": "",
+ *       "trigger_keywords": ["검색용 키워드", "..."],
+ *       "applicable_when": { "language": [], "kind": ["decision"], "task_type": [], "scope_id": "" },
  *       "id": "<update 시 기존 decision id>"
  *     }
  *   }

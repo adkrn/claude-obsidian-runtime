@@ -58,15 +58,15 @@ node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind decision
 출력된 기존 decision 목록(id/title/summary)을 보고 판단:
 - **같은 주제 없음 → create**: 새로 작성.
   ```bash
-  echo '{"mode":"create","decision":{"statement":"<무엇을 결정했나, 한 문장>","why":["<왜 이 결정 / 어떤 대안을 왜 안 골랐나>"],"relatedFiles":[],"scope":""}}' | node "$CLAUDE_RUNTIME_HOME/commands/decision-write.mjs"
+  echo '{"mode":"create","decision":{"statement":"<무엇을 결정했나, 한 문장>","why":["<왜 이 결정 / 어떤 대안을 왜 안 골랐나>"],"relatedFiles":[],"scope":"","trigger_keywords":[],"applicable_when":{"language":[],"kind":["decision"],"task_type":[],"scope_id":""}}}' | node "$CLAUDE_RUNTIME_HOME/commands/decision-write.mjs"
   ```
 - **같은 주제 있고 이미 충분 → skip**: 아무것도 하지 않음(중복 방지).
 - **같은 주제 있고 보완 필요 → update**: 기존 문서(목록의 sourceDoc)를 읽고, 새 내용을 통합한 **전체본**을 작성해 같은 id로 교체.
   ```bash
-  echo '{"mode":"update","decision":{"id":"<기존 decision id>","statement":"...","why":["..."],"relatedFiles":[],"scope":""}}' | node "$CLAUDE_RUNTIME_HOME/commands/decision-write.mjs"
+  echo '{"mode":"update","decision":{"id":"<기존 decision id>","statement":"...","why":["..."],"relatedFiles":[],"scope":"","trigger_keywords":[],"applicable_when":{}}}' | node "$CLAUDE_RUNTIME_HOME/commands/decision-write.mjs"
   ```
 
-작성 기준: statement="무엇을 결정했나"(한 문장), why="왜 이 결정인가 / 어떤 대안을 왜 안 골랐나"(1~3개, 가장 중요). 세션이 쓴 decision 은 바로 active(검색 대상) — 사람 승격 단계 없음.
+작성 기준: statement="무엇을 결정했나"(한 문장), why="왜 이 결정인가 / 어떤 대안을 왜 안 골랐나"(1~3개, 가장 중요). **`trigger_keywords`를 꼭 채워라** — 이 결정을 다음에 어떤 단어로 검색할지(고유명사·모듈명·기술명·핵심 개념 5~10개). 비우면 검색 게이트·랭킹에 전혀 기여하지 못한다(lesson과 동일 신호). 보일러플레이트 금지. 세션이 쓴 decision 은 바로 active(검색 대상) — 사람 승격 단계 없음.
 
 ## 1.6. troubleshooting을 직접 작성 (D-26 — create/update/skip)
 
@@ -108,15 +108,15 @@ node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind architecture
 
 - **같은 주제 없음 → create**: body에 본문 마크다운(## 컴포넌트, ## 데이터 흐름 등 자유 구성)을 직접 작성.
   ```bash
-  echo '{"mode":"create","architecture":{"summary":"<한 줄 개요>","body":"## 컴포넌트\n- ...\n\n## 데이터 흐름\n- ...","title":"<문서 제목>","relatedFiles":[],"scope":""}}' | node "$CLAUDE_RUNTIME_HOME/commands/architecture-write.mjs"
+  echo '{"mode":"create","architecture":{"summary":"<한 줄 개요>","body":"## 컴포넌트\n- ...\n\n## 데이터 흐름\n- ...","title":"<문서 제목>","relatedFiles":[],"scope":"","trigger_keywords":[],"applicable_when":{"language":[],"kind":["architecture"],"task_type":[],"scope_id":""}}}' | node "$CLAUDE_RUNTIME_HOME/commands/architecture-write.mjs"
   ```
 - **같은 주제 있고 이미 충분 → skip**.
 - **같은 주제 있고 보완 필요 → update**: 기존 문서(목록의 sourceDoc)를 읽고 **통째로 다시 쓴** 전체본을 같은 id로 교체(부분교체 아님).
   ```bash
-  echo '{"mode":"update","architecture":{"id":"<기존 id>","summary":"...","body":"<전체 재작성>","relatedFiles":[]}}' | node "$CLAUDE_RUNTIME_HOME/commands/architecture-write.mjs"
+  echo '{"mode":"update","architecture":{"id":"<기존 id>","summary":"...","body":"<전체 재작성>","relatedFiles":[],"trigger_keywords":[],"applicable_when":{}}}' | node "$CLAUDE_RUNTIME_HOME/commands/architecture-write.mjs"
   ```
 
-작성 기준: summary(필수)는 한 줄 개요, body는 당신이 쓴 본문 마크다운. 세션이 쓴 architecture는 바로 active. 04_Architecture/Generated에 저장됩니다.
+작성 기준: summary(필수)는 한 줄 개요, body는 당신이 쓴 본문 마크다운. **`trigger_keywords`를 꼭 채워라** — 이 구조를 다음에 어떤 단어로 찾을지(컴포넌트명·모듈명·핵심 개념 5~10개). 비우면 검색 게이트·랭킹에 기여하지 못한다. 세션이 쓴 architecture는 바로 active. 04_Architecture/Generated에 저장됩니다.
 
 ## 2. 나머지 종료 파이프라인 실행
 

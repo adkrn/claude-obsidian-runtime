@@ -396,6 +396,11 @@ function buildDecisionCandidate({ task, scope, dateStamp, config, override }) {
     summary: statement,
     relatedFiles: files,
     rules: why,
+    // 검색 신호 (G1): 세션 작성 경로에서만 채워짐. 휴리스틱 경로(override 없음)는 빈 값 유지.
+    trigger_keywords: (override && Array.isArray(override.trigger_keywords)) ? override.trigger_keywords : [],
+    applicable_when: (override && override.applicable_when && typeof override.applicable_when === 'object')
+      ? override.applicable_when
+      : {},
     relativePath: buildRelativeDocPath('decision', scope, dateStamp, task.taskId, config),
     content: `---
 title: Auto Decision ${dateStamp} (${task.taskId})
@@ -747,6 +752,11 @@ export function writeSessionDecision(projectDir, options = {}, config = {}) {
     statement: decision.statement,
     why: Array.isArray(decision.why) ? decision.why : [],
     relatedFiles: Array.isArray(decision.relatedFiles) ? decision.relatedFiles : [],
+    // 검색 신호 (G1): 세션이 채운 trigger_keywords / applicable_when 을 보존해 게이트·점수에 기여하게 한다.
+    trigger_keywords: Array.isArray(decision.trigger_keywords) ? decision.trigger_keywords : [],
+    applicable_when: (decision.applicable_when && typeof decision.applicable_when === 'object')
+      ? decision.applicable_when
+      : {},
     id: mode === 'update' ? decision.id : undefined
   };
   const candidate = buildDecisionCandidate({ task, scope, dateStamp, config, override });
@@ -878,6 +888,11 @@ function buildArchitectureCandidate({ task, scope, dateStamp, config, override }
     title: `Architecture - ${title}`,
     summary,
     relatedFiles: files,
+    // 검색 신호 (G1): 세션이 채운 trigger_keywords / applicable_when 보존.
+    trigger_keywords: Array.isArray(override.trigger_keywords) ? override.trigger_keywords : [],
+    applicable_when: (override.applicable_when && typeof override.applicable_when === 'object')
+      ? override.applicable_when
+      : {},
     relativePath: buildRelativeDocPath('architecture', scope, dateStamp, task.taskId, config),
     content: `---
 title: Architecture ${dateStamp} (${task.taskId})
@@ -992,6 +1007,11 @@ export function writeSessionArchitecture(projectDir, options = {}, config = {}) 
     body: arch.body,
     title: arch.title,
     relatedFiles: Array.isArray(arch.relatedFiles) ? arch.relatedFiles : [],
+    // 검색 신호 (G1): 세션이 채운 trigger_keywords / applicable_when 을 보존해 게이트·점수에 기여하게 한다.
+    trigger_keywords: Array.isArray(arch.trigger_keywords) ? arch.trigger_keywords : [],
+    applicable_when: (arch.applicable_when && typeof arch.applicable_when === 'object')
+      ? arch.applicable_when
+      : {},
     id: mode === 'update' ? arch.id : undefined
   };
   const candidate = buildArchitectureCandidate({ task, scope, dateStamp, config, override });

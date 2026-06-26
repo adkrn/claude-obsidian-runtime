@@ -22,6 +22,8 @@
  *       "title": "문서 제목 (생략 시 task title)",
  *       "relatedFiles": [],
  *       "scope": "",
+ *       "trigger_keywords": ["검색용 키워드", "..."],
+ *       "applicable_when": { "language": [], "kind": ["architecture"], "task_type": [], "scope_id": "" },
  *       "id": "<update 시 기존 architecture id>"
  *     }
  *   }
