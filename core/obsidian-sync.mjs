@@ -47,7 +47,7 @@ function quarantineTtlMs() {
 
 // Move a single file into <contextRoot>/_quarantine/<YYYY-MM-DD>/<root>/<relPath>.
 // Falls back to copy+rm when rename crosses volumes. Returns { quarantinedPath, bytes }.
-function moveFileToQuarantine(contextRoot, sourceAbsPath, mirrorRelativePath, now = new Date()) {
+export function moveFileToQuarantine(contextRoot, sourceAbsPath, mirrorRelativePath, now = new Date()) {
   const baseDir = path.join(quarantineRoot(contextRoot), todayStamp(now));
   let destPath = path.join(baseDir, mirrorRelativePath);
   ensureDir(path.dirname(destPath));

@@ -39,6 +39,7 @@ import {
 } from './utils.mjs';
 import { extractLessonContent } from './memory/lesson-extractor.mjs';
 import { isBoilerplateGuardrail } from './context-resolver.mjs';
+import { moveFileToQuarantine } from './obsidian-sync.mjs';
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -520,15 +521,44 @@ function publishCandidate(projectDir, obsidianConfig, candidate, publish, config
   };
 }
 
-function upsertKnowledgeRow(projectDir, kind, nextRow) {
+function upsertKnowledgeRow(projectDir, kind, nextRow, obsidianConfig = null) {
   const runtimePaths = getRuntimePaths(projectDir);
   const targetPath = path.join(runtimePaths.knowledgeRoot, KNOWLEDGE_INDEX_FILES[kind]);
-  const rows = loadJsonl(targetPath)
+  const existing = loadJsonl(targetPath);
+
+  // On update (same id), the doc filename is taskId-based, so a re-run from a new
+  // task writes a NEW .md and leaves the previous one orphaned on disk with stale
+  // content (no index points at it; sync no longer prunes it). Quarantine the old
+  // doc — move, never delete (past mirror-only deletion lost data irrecoverably).
+  const prior = existing.find((r) => r?.id === nextRow.id);
+  quarantineSupersededDoc(prior, nextRow, obsidianConfig);
+
+  const rows = existing
     .filter((r) => r?.id !== nextRow.id)
     .concat(nextRow)
     .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
   writeJsonlFile(targetPath, rows);
   return targetPath;
+}
+
+/**
+ * When an update replaces a row whose vault doc lived at a different path,
+ * move the now-orphaned old .md into _quarantine (best-effort, never throws).
+ */
+function quarantineSupersededDoc(priorRow, nextRow, obsidianConfig) {
+  if (!obsidianConfig?.vaultRoot || !obsidianConfig?.contextRoot) return;
+  const priorDoc = normalizePath(priorRow?.sourceDoc || '');
+  const nextDoc = normalizePath(nextRow?.sourceDoc || '');
+  if (!priorDoc || priorDoc === nextDoc) return; // no prior, or same file (overwritten in place)
+
+  const oldAbs = path.join(obsidianConfig.vaultRoot, priorDoc);
+  if (!fs.existsSync(oldAbs)) return; // already gone / queued elsewhere
+
+  try {
+    moveFileToQuarantine(obsidianConfig.contextRoot, oldAbs, priorDoc);
+  } catch {
+    // Best-effort: a failed quarantine must never block the index write.
+  }
 }
 
 function buildKnowledgeFollowUpEntry(candidate, artifact, duplicateOf = '') {
@@ -601,7 +631,7 @@ export function curateTaskKnowledge(projectDir, options = {}, config = {}) {
     const duplicate = options.forcePublish ? null : findDuplicateCandidate(existingRows, candidate, obsidianConfig.vaultRoot);
     const artifact = publishCandidate(projectDir, obsidianConfig, candidate, options.publish !== false && !duplicate, config);
     const row = buildCandidateRow(candidate, task, artifact, duplicate?.sourceDoc || '');
-    upsertKnowledgeRow(projectDir, candidate.kind, row);
+    upsertKnowledgeRow(projectDir, candidate.kind, row, obsidianConfig);
 
     artifacts.push({
       kind: candidate.kind,
@@ -699,7 +729,7 @@ export function writeSessionLesson(projectDir, options = {}, config = {}) {
   // 세션이 판단했으므로 중복판정 우회 — 항상 publish(active). upsert 가 같은 id 교체.
   const artifact = publishCandidate(projectDir, obsidianConfig, candidate, options.publish !== false, config);
   const row = buildCandidateRow(candidate, task, artifact, '');
-  upsertKnowledgeRow(projectDir, 'lesson', row);
+  upsertKnowledgeRow(projectDir, 'lesson', row, obsidianConfig);
 
   return {
     ok: true,
@@ -764,7 +794,7 @@ export function writeSessionDecision(projectDir, options = {}, config = {}) {
   // 세션이 판단했으므로 중복판정 우회 — 항상 publish(active). upsert 가 같은 id 교체.
   const artifact = publishCandidate(projectDir, obsidianConfig, candidate, options.publish !== false, config);
   const row = buildCandidateRow(candidate, task, artifact, '');
-  upsertKnowledgeRow(projectDir, 'decision', row);
+  upsertKnowledgeRow(projectDir, 'decision', row, obsidianConfig);
 
   return {
     ok: true,
@@ -967,7 +997,7 @@ export function writeSessionTroubleshooting(projectDir, options = {}, config = {
   // 세션이 판단했으므로 중복판정 우회 — 항상 publish(active). upsert 가 같은 id 교체.
   const artifact = publishCandidate(projectDir, obsidianConfig, candidate, options.publish !== false, config);
   const row = buildCandidateRow(candidate, task, artifact, '');
-  upsertKnowledgeRow(projectDir, 'troubleshooting', row);
+  upsertKnowledgeRow(projectDir, 'troubleshooting', row, obsidianConfig);
 
   return {
     ok: true,
@@ -1029,7 +1059,7 @@ export function writeSessionArchitecture(projectDir, options = {}, config = {}) 
   // 세션이 판단했으므로 중복판정 우회 — 항상 publish(active). upsert 가 같은 id 교체.
   const artifact = publishCandidate(projectDir, obsidianConfig, candidate, options.publish !== false, config);
   const row = buildCandidateRow(candidate, task, artifact, '');
-  upsertKnowledgeRow(projectDir, 'architecture', row);
+  upsertKnowledgeRow(projectDir, 'architecture', row, obsidianConfig);
 
   return {
     ok: true,
