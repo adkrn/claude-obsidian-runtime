@@ -44,6 +44,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 export const BOILERPLATE = 'read read_first notes before writing a plan';
 
@@ -299,7 +300,7 @@ function main(argv) {
 // Run only as a script, not when imported by tests.
 const invokedDirectly =
   process.argv[1] &&
-  path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (invokedDirectly) {
   process.exit(main(process.argv.slice(2)));
 }
