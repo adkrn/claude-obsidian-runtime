@@ -51,9 +51,13 @@ const RETRIEVAL_WEIGHTS_KEYS = [
 ];
 
 // DESIGN_MANUS_C §4-C — optional diversity sub-keys (default 0.2 / 0.7).
+// Phase A/B — optional lightweight-relevance sub-keys (default 0.5 / 0.15),
+// consumed by core/memory/similarity.mjs via buildLessonReadFirst.
 const RETRIEVAL_WEIGHTS_OPTIONAL_KEYS = [
   'diversityLambda',
-  'diversityJaccardThreshold'
+  'diversityJaccardThreshold',
+  'triggerKeywordWeight',
+  'trigramWeight'
 ];
 
 const MEMORY_LAYERS_KEYS = {

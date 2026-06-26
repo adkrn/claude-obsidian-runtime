@@ -35,6 +35,7 @@ import {
 } from '../core/context-resolver.mjs';
 import { applyMMR, emitSortByPath } from '../core/memory/mmr.mjs';
 import { scoreItems } from '../core/memory/retrieval-scoring.mjs';
+import { improvedSimilarity } from '../core/memory/similarity.mjs';
 import { bumpHitCounts } from '../core/memory/hit-counts.mjs';
 import { generateInitialTodoList, writeTodoFile } from '../core/todo-writer.mjs';
 import { loadObsidianConfig } from '../core/obsidian-config.mjs';
@@ -98,6 +99,16 @@ export function buildLessonReadFirst({
     ? manifest.retrievalWeights.diversityJaccardThreshold
     : undefined;
 
+  // Phase A (G1) — lightweight relevance weights, overridable via manifest.
+  // Only numeric overrides are forwarded; absent → similarity defaults.
+  const similarityWeights = {};
+  if (Number.isFinite(manifest?.retrievalWeights?.triggerKeywordWeight)) {
+    similarityWeights.triggerKeywordWeight = manifest.retrievalWeights.triggerKeywordWeight;
+  }
+  if (Number.isFinite(manifest?.retrievalWeights?.trigramWeight)) {
+    similarityWeights.trigramWeight = manifest.retrievalWeights.trigramWeight;
+  }
+
   // 1 + 2. F gate + 3-axis score (scoreItem handles both inside scoreItems).
   const ctx = {
     promptTokens,
@@ -106,7 +117,10 @@ export function buildLessonReadFirst({
     signalTokens: promptTokens,
     activeScopes: matchedScopes,
     gateMode: 'exclude',
-    now: now instanceof Date ? now : new Date()
+    now: now instanceof Date ? now : new Date(),
+    // Phase A seam: trigger_keywords now contribute to the relevance score,
+    // not just the applicable_when gate (G1). Jaccard base preserved.
+    relevanceFn: (item) => improvedSimilarity(ctx, item, { weights: similarityWeights })
   };
   const scored = scoreItems(lessons, ctx);
 
