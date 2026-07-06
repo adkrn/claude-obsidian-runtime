@@ -302,6 +302,12 @@ async function installFromManifest(projectDir, options = {}) {
   fs.writeFileSync(versionPath, JSON.stringify(versionInfo, null, 2) + '\n');
   results.versionWritten = true;
 
+  // Refresh engine-managed slash-command instructions (task-close.md, ...).
+  // preserveList doubles as the command opt-out (same manifest.preserveHooks list).
+  const cmdSync = syncCommandTemplates(projectDir, PACKAGE_ROOT, { preserve: [...preserveList] });
+  results.commandsCopied = cmdSync.copied;
+  results.commandsBackedUp = cmdSync.backedUp;
+
   return results;
 }
 
@@ -315,6 +321,55 @@ function listTemplateCoreHooks() {
   const dir = path.join(PACKAGE_ROOT, 'templates', 'hooks');
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter((f) => f.endsWith('.sh')).sort();
+}
+
+/**
+ * Sync engine slash-command instruction files (templates/commands/*.md) into a
+ * project's .claude/commands/. These are ENGINE-MANAGED instructions (task-close,
+ * task-start, ...), not user content — improving them in the package is useless
+ * unless they reach project copies. Prior to this, only init-project copied them
+ * once and no upgrade path refreshed them, so every project drifted (e.g. the
+ * trigger_keywords guidance never landed → decision/architecture/troubleshooting
+ * rows shipped with empty search signals).
+ *
+ * Safety: a changed copy is backed up to `<file>.bak` before overwrite (won't
+ * clobber an existing .bak). Identical copies are skipped (idempotent). A file
+ * listed in `options.preserve` is left untouched (user opt-out).
+ *
+ * @param {string} projectDir
+ * @param {string} [packageRoot]  defaults to this package's root
+ * @param {{ preserve?: string[] }} [options]
+ * @returns {{ copied: string[], backedUp: string[], preserved: string[] }}
+ */
+export function syncCommandTemplates(projectDir, packageRoot = PACKAGE_ROOT, options = {}) {
+  const srcDir = path.join(packageRoot, 'templates', 'commands');
+  const result = { copied: [], backedUp: [], preserved: [] };
+  if (!fs.existsSync(srcDir)) return result;
+
+  const preserve = new Set(options.preserve || []);
+  const dstDir = path.join(projectDir, '.claude', 'commands');
+  ensureDir(dstDir);
+
+  for (const name of fs.readdirSync(srcDir).filter((f) => f.endsWith('.md')).sort()) {
+    if (preserve.has(name)) {
+      result.preserved.push(name);
+      continue;
+    }
+    const src = path.join(srcDir, name);
+    const dst = path.join(dstDir, name);
+    const next = fs.readFileSync(src, 'utf8');
+
+    if (fs.existsSync(dst)) {
+      const current = fs.readFileSync(dst, 'utf8');
+      if (current === next) continue; // already up to date — no rewrite, no backup
+      const bak = `${dst}.bak`;
+      if (!fs.existsSync(bak)) fs.copyFileSync(dst, bak);
+      result.backedUp.push(name);
+    }
+    fs.writeFileSync(dst, next, 'utf8');
+    result.copied.push(name);
+  }
+  return result;
 }
 
 /**
@@ -391,7 +446,12 @@ function installFromTemplates(projectDir, options = {}) {
     }
   }
 
-  return { installed, preserved, skipped };
+  // Refresh engine-managed slash-command instructions alongside hooks.
+  const commandSync = options.dryRun
+    ? { copied: [], backedUp: [], preserved: [] }
+    : syncCommandTemplates(projectDir, PACKAGE_ROOT, { preserve: [...preserveSet] });
+
+  return { installed, preserved, skipped, commandsCopied: commandSync.copied, commandsBackedUp: commandSync.backedUp };
 }
 
 // ── CLI ────────────────────────────────────────────────────────────
