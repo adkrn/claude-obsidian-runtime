@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "packageVersion": "3.3.4",
-  "generatedAt": "2026-06-25T09:33:18.701Z",
+  "generatedAt": "2026-07-07T04:35:22.769Z",
   "generator": "scripts/build-template-manifest.mjs",
   "files": [
     {
@@ -168,8 +168,8 @@
     },
     {
       "relPath": "commands/task-close.md",
-      "sha256": "a688fea1264fed180572896cdfbe790411a27598e6bce652415fbf3d9ef1c751",
-      "size": 10446,
+      "sha256": "215a1eaa84cfeabd7d7a343e378c3bcf3a15c04dc73a48b4d5fff2219ed2395b",
+      "size": 11779,
       "required": false
     },
     {
@@ -281,5 +281,5 @@
       "required": false
     }
   ],
-  "rootFingerprint": "e342bbb0a9ef0967b7245e76fc258a6e88fef90e1b21df711ef08f0dcb941dc8"
+  "rootFingerprint": "a66fb18e9f3437e7194ecbacba1ba13ae5c34216a68ec0a81e87700b655f1418"
 }
