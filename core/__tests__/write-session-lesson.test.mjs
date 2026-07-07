@@ -113,6 +113,30 @@ describe('writeSessionLesson (D-23)', () => {
     assert.ok(rows[0].rules.some((rule) => rule.includes('active scene')));
   });
 
+  it('persists session importance/confidence into the jsonl row (scoreItem reads item.importance)', () => {
+    const dir = sandbox();
+    writeTask(dir, makeTask());
+    const v = captureVault();
+    writeSessionLesson(dir, { taskId: '20260625-1200-test', mode: 'create', lesson: goodLesson }, v.config);
+    const rows = loadJsonl(path.join(getRuntimePaths(dir).knowledgeRoot, 'lessons.jsonl'));
+    // goodLesson has importance:8, confidence:'high' — they must reach the row,
+    // otherwise importanceScore(undefined)=0 silently kills the importance axis.
+    assert.equal(rows[0].importance, 8, 'session importance must reach the row');
+    assert.equal(rows[0].confidence, 'high', 'session confidence must reach the row');
+  });
+
+  it('defaults importance/confidence sensibly when the session omits them', () => {
+    const dir = sandbox();
+    writeTask(dir, makeTask());
+    const v = captureVault();
+    const { importance, confidence, ...noRank } = goodLesson;
+    writeSessionLesson(dir, { taskId: '20260625-1200-test', mode: 'create', lesson: noRank }, v.config);
+    const rows = loadJsonl(path.join(getRuntimePaths(dir).knowledgeRoot, 'lessons.jsonl'));
+    // Missing importance must not become undefined (→ importanceScore 0). A mid default keeps the axis alive.
+    assert.equal(typeof rows[0].importance, 'number');
+    assert.ok(rows[0].importance >= 1 && rows[0].importance <= 10);
+  });
+
   it('does not mix legacy heuristic rules into session-authored lesson (D-23 보일러플레이트 0)', () => {
     const dir = sandbox();
     // guardrails + 성공 verification 을 심어 legacy rule(buildLessonRules)이 생성될 조건을 만든다.

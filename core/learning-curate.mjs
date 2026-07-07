@@ -281,6 +281,10 @@ function buildLessonCandidate({ task, scope, dateStamp, config, override }) {
     rules,
     applicable_when: extracted.applicable_when,
     trigger_keywords: extracted.trigger_keywords,
+    // 검색 랭킹의 importance 축 (retrieval-scoring scoreItem 이 item.importance 를 읽음).
+    // 세션 미제공 시 중간값 — undefined 면 importanceScore 가 0 이 돼 이 축이 죽는다.
+    importance: Number.isFinite(extracted.importance) ? extracted.importance : 5,
+    confidence: typeof extracted.confidence === 'string' && extracted.confidence ? extracted.confidence : 'medium',
     relativePath: buildRelativeDocPath('lesson', scope, dateStamp, task.taskId, config),
     content: `---
 title: Auto Lesson ${dateStamp} (${task.taskId})
@@ -450,6 +454,10 @@ function buildCandidateRow(candidate, task, publishedArtifact, duplicateOf = '')
     relatedFiles: candidate.relatedFiles,
     applicable_when: candidate.applicable_when || {},
     trigger_keywords: candidate.trigger_keywords || [],
+    // importance/confidence: lesson candidate 만 채움. scoreItem 이 item.importance 를
+    // 검색 랭킹에 쓰므로 있으면 반드시 실어야 한다(빠지면 importanceScore 0).
+    ...(Number.isFinite(candidate.importance) ? { importance: candidate.importance } : {}),
+    ...(typeof candidate.confidence === 'string' && candidate.confidence ? { confidence: candidate.confidence } : {}),
     sourceTaskId: task.taskId,
     sourceDoc: candidate.relativePath,
     storage: publishedArtifact?.result?.storage || '',
