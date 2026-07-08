@@ -159,7 +159,12 @@ export function evaluateGate(item, ctx = {}) {
   const evaluated = [];
   const failed = [];
 
-  if (Array.isArray(raw.path_glob) && raw.path_glob.length > 0) {
+  // Each gate is evaluated only when BOTH the lesson declares it AND the caller
+  // supplied the matching signal. When the ctx-side signal is empty, the gate
+  // cannot be evaluated ("can't tell" ≠ "no match") → SKIP, don't fail. This
+  // keeps scoped lessons visible to callers that don't resolve scopes/paths
+  // (e.g. task-start with matchedScopes=[]); the semantic scorer then ranks.
+  if (Array.isArray(raw.path_glob) && raw.path_glob.length > 0 && candidatePaths.length > 0) {
     evaluated.push('path_glob');
     let ok = false;
     for (const pattern of raw.path_glob) {
@@ -171,7 +176,7 @@ export function evaluateGate(item, ctx = {}) {
     if (!ok) failed.push('path_glob');
   }
 
-  if (Array.isArray(raw.trigger_keywords) && raw.trigger_keywords.length > 0) {
+  if (Array.isArray(raw.trigger_keywords) && raw.trigger_keywords.length > 0 && signalTokenSet.size > 0) {
     evaluated.push('trigger_keywords');
     const tkSet = toLowerSet(raw.trigger_keywords);
     let overlap = 0;
@@ -185,7 +190,7 @@ export function evaluateGate(item, ctx = {}) {
   const scopeIds = Array.isArray(scopeIdRaw)
     ? scopeIdRaw.filter((s) => typeof s === 'string' && s.length > 0)
     : (typeof scopeIdRaw === 'string' && scopeIdRaw.length > 0 ? [scopeIdRaw] : []);
-  if (scopeIds.length > 0) {
+  if (scopeIds.length > 0 && activeScopeSet.size > 0) {
     evaluated.push('scope_id');
     let ok = false;
     for (const id of scopeIds) {

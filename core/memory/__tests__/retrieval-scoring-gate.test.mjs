@@ -92,6 +92,39 @@ test('F-8 scope_id_no_match_array: scope_id (string[]) no intersection → faile
   assert.deepEqual(result.failedGates, ['scope_id']);
 });
 
+// ── 8b. empty-signal → gate can't evaluate → SKIP (pass) ─────────
+// Bug: when the ctx-side signal is empty (no scope/path/keyword info from the
+// caller), the gate must SKIP — "can't evaluate" ≠ "no match". Otherwise every
+// scoped lesson dies on callers that don't resolve scopes (e.g. matchedScopes=[]).
+test('F-8b scope_id: empty activeScopes → SKIP scope_id gate (pass, not evaluated)', () => {
+  const item = { applicable_when: { scope_id: 'musicGame' } };
+  const result = evaluateGate(item, { activeScopes: [] });
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.evaluated, []);        // gate was skipped, not evaluated
+  assert.deepEqual(result.failedGates, []);
+});
+
+test('F-8c scope_id: missing activeScopes entirely → SKIP (pass)', () => {
+  const item = { applicable_when: { scope_id: ['musicGame', 'repo'] } };
+  const result = evaluateGate(item, {});
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.failedGates, []);
+});
+
+test('F-8d path_glob: empty candidatePaths → SKIP path_glob gate (pass)', () => {
+  const item = { applicable_when: { path_glob: ['src/**'] } };
+  const result = evaluateGate(item, { candidatePaths: [] });
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.evaluated, []);
+});
+
+test('F-8e trigger_keywords: empty signalTokens → SKIP tk gate (pass)', () => {
+  const item = { applicable_when: { trigger_keywords: ['hook'] } };
+  const result = evaluateGate(item, { signalTokens: [] });
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.evaluated, []);
+});
+
 // ── 9. all_gates_AND_pass ────────────────────────────────────────
 test('F-9 all_gates_AND_pass: 3 gates all match → passed, evaluated has 3', () => {
   const item = {
