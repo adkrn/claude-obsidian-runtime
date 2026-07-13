@@ -205,6 +205,51 @@ function estimateContextTokens(taskRecord) {
     + (taskRecord.guardrails || []).length * 20;
 }
 
+const KNOWLEDGE_KIND_FILES = [
+  ['lesson', 'lessons.jsonl'],
+  ['decision', 'decisions.jsonl'],
+  ['troubleshooting', 'troubleshooting.jsonl'],
+  ['architecture', 'architecture.jsonl']
+];
+
+// D-23/D-25 이후 lesson/decision/troubleshooting/architecture 는 세션 Claude 가
+// learn-write 계열 CLI 로 session-end 이전에 저장한다. curation 결과만 세면 close
+// 지표가 항상 0 — knowledge index 에서 이 task 의 행을 직접 세어 집계한다.
+function countTaskArtifacts(projectDir, taskId) {
+  const knowledgeRoot = getRuntimePaths(projectDir).knowledgeRoot;
+  const counts = { lesson: 0, decision: 0, troubleshooting: 0, architecture: 0 };
+  let vaultWrites = 0;
+  for (const [kind, file] of KNOWLEDGE_KIND_FILES) {
+    for (const row of loadJsonl(path.join(knowledgeRoot, file))) {
+      if (!row || row.sourceTaskId !== taskId) continue;
+      counts[kind] += 1;
+      if (row.storage === 'vault') vaultWrites += 1;
+    }
+  }
+  return { counts, vaultWrites };
+}
+
+const EVENT_FILE_REGEX = /^(\d{4}-\d{2}-\d{2})\.jsonl$/;
+
+// 이 task 의 이벤트만 센다. task 생성일 이후의 날짜별 이벤트 파일만 스캔.
+// (이전 구현은 당일 이벤트 파일의 전체 라인 수를 기록하는 버그였다.)
+function countTaskEvents(projectDir, taskId, createdAtIso) {
+  const eventsRoot = getRuntimePaths(projectDir).eventsRoot;
+  const sinceStamp = String(createdAtIso || '').slice(0, 10);
+  let files;
+  try { files = fs.readdirSync(eventsRoot); } catch { return 0; }
+  let count = 0;
+  for (const name of files) {
+    const m = name.match(EVENT_FILE_REGEX);
+    if (!m) continue;
+    if (sinceStamp && m[1] < sinceStamp) continue;
+    for (const row of loadJsonl(path.join(eventsRoot, name))) {
+      if (row?.taskId === taskId) count += 1;
+    }
+  }
+  return count;
+}
+
 function truncate(text, max) {
   const s = String(text || '').replace(/\s+/g, ' ').trim();
   if (s.length <= max) return s;
@@ -321,8 +366,8 @@ async function tryCalculateTaskUsage(projectDir, params) {
   return null;
 }
 
-async function main() {
-  const args = parseSessionEndArgs(process.argv.slice(2));
+export async function main(argv = process.argv.slice(2)) {
+  const args = parseSessionEndArgs(argv);
   const projectDir = path.resolve(args.projectDir || process.env.CLAUDE_PROJECT_DIR || process.cwd());
   const manifest = loadManifest(projectDir);
   const runtimePaths = ensureRuntimeLayout(projectDir);
@@ -391,9 +436,11 @@ async function main() {
 
   // 글로벌 pointer fallback 제거. session/task-id 둘 다 비면 "no active task" 로 명시 종료.
   // 이전 동작은 다른 세션이 진행중인 task 를 잘못 닫는 race 의 주원인.
+  // 빈 sessionId 의 no-task 이벤트는 기록하지 않는다 — SessionEnd hook 다중 발화로
+  // 동일 이벤트가 수십 ms 안에 십수 건 쌓이는 실측 노이즈(식별 정보 0). stdout 응답은 유지.
   const globalPointer = loadCurrentTaskPointer(projectDir);
   if (!taskRecord) {
-    if (globalPointer?.taskId) {
+    if (sessionId && globalPointer?.taskId) {
       appendJsonl(getEventFilePath(projectDir, now), {
         ts: now.toISOString(),
         taskId: '',
@@ -407,18 +454,33 @@ async function main() {
         }
       });
     }
+    if (sessionId) {
+      appendJsonl(getEventFilePath(projectDir, now), {
+        ts: now.toISOString(),
+        taskId: '',
+        eventType: 'session_ended',
+        scope: defaultScope,
+        summary: 'session ended without active task',
+        detail: { sessionId }
+      });
+    }
+    process.stdout.write(JSON.stringify({ ok: true, message: 'no active task' }) + '\n');
+    return;
   }
 
-  if (!taskRecord) {
-    appendJsonl(getEventFilePath(projectDir, now), {
-      ts: now.toISOString(),
-      taskId: '',
-      eventType: 'session_ended',
-      scope: defaultScope,
-      summary: 'session ended without active task',
-      detail: { sessionId }
-    });
-    process.stdout.write(JSON.stringify({ ok: true, message: 'no active task' }) + '\n');
+  // 중복 close 가드 — 이미 완료된 task 를 다시 닫으면 task_closed 이벤트와 worklog 가
+  // 이중 생성된다(CardGame 실측 2건, 10~13초 간격 재실행). 포인터 정리만 하고 종료.
+  const priorStatus = String(taskRecord.status || '').toLowerCase();
+  if (args.close && ['completed', 'closed', 'archived'].includes(priorStatus)) {
+    if (globalPointer?.taskId === taskRecord.taskId) {
+      clearCurrentTaskPointer(projectDir, taskRecord.taskId);
+    }
+    if (sessionId) clearSessionTaskPointer(projectDir, sessionId, taskRecord.taskId);
+    process.stdout.write(JSON.stringify({
+      ok: true,
+      taskId: taskRecord.taskId,
+      skipped: 'already_closed'
+    }) + '\n');
     return;
   }
 
@@ -594,6 +656,8 @@ async function main() {
     });
   }
 
+  const artifactTotals = countTaskArtifacts(projectDir, taskRecord.taskId);
+
   const pendingEventType = args.close ? 'task_closed' : 'session_ended';
   appendJsonl(getEventFilePath(projectDir, now), {
     ts: now.toISOString(),
@@ -603,14 +667,19 @@ async function main() {
     summary: args.close ? `task closed: ${taskRecord.title || taskRecord.taskId}` : `session ended: ${taskRecord.title || taskRecord.taskId}`,
     detail: {
       sessionId,
-      lessonsCreated: newLessons.length,
+      lessonsCreated: artifactTotals.counts.lesson,
+      decisionsCreated: artifactTotals.counts.decision,
+      troubleshootingCreated: artifactTotals.counts.troubleshooting,
+      architectureCreated: artifactTotals.counts.architecture,
+      curatedArtifacts: newLessons.length,
       lessonsDuplicate: newLessons.filter((l) => l.duplicateOf).length,
-      vaultWrites: newLessons.filter((l) => l.result?.storage === 'vault').length,
+      vaultWrites: artifactTotals.vaultWrites,
       archChanges: archChanges.length,
       promotedDocs: promotedDocs.length,
       totalHitEntries: Object.keys(hitCounts).length,
       durationMs: taskRecord.createdAt ? now.getTime() - new Date(taskRecord.createdAt).getTime() : null,
-      eventCount: loadJsonl(getEventFilePath(projectDir, now)).length,
+      // +1: 지금 기록하는 이 이벤트 포함
+      eventCount: countTaskEvents(projectDir, taskRecord.taskId, taskRecord.createdAt) + 1,
       contextTokenEstimate: estimateContextTokens(taskRecord)
     }
   });
@@ -622,8 +691,10 @@ async function main() {
   process.stdout.write(JSON.stringify({
     ok: true,
     taskId: taskRecord.taskId,
-    lessonsCreated: newLessons.length,
-    vaultWrites: newLessons.filter((l) => l.result?.storage === 'vault').length,
+    lessonsCreated: artifactTotals.counts.lesson,
+    artifacts: artifactTotals.counts,
+    curatedArtifacts: newLessons.length,
+    vaultWrites: artifactTotals.vaultWrites,
     archChanges: archChanges.length,
     promotedDocs: promotedDocs.length,
     hitCountEntries: Object.keys(hitCounts).length,
