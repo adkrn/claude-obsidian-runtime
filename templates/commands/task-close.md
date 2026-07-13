@@ -4,6 +4,16 @@
 
 > **taskId 먼저 확보**: 아래 모든 단계(산출물 저장 + 종료)는 `/task-start` 때 받은 `taskId`를 기준으로 동작합니다. 그 taskId를 각 CLI에 `"taskId":"<값>"`(JSON) 또는 `--task-id "<값>"`(종료)로 명시하면, session-id가 비어 있거나 여러 세션이 열려 있어도 **이 세션의 task만** 정확히 다룹니다. taskId를 모르면 current-task 포인터로 폴백하나 멀티세션에선 부정확할 수 있습니다.
 
+## 0. 기존 산출물 목록을 한 번에 조회
+
+아래 1~1.7단계의 create/update/skip 판단에 쓸 기존 산출물 목록을 **한 번만** 조회합니다. kind별로 4번 따로 호출하지 마세요 — 같은 정보를 세션 최심부 컨텍스트에 4번 싣는 낭비입니다.
+
+```bash
+node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind all
+```
+
+각 항목에 `kind` 필드(lesson|decision|troubleshooting|architecture)가 붙어 있습니다. 아래 단계들은 이 출력에서 해당 kind 항목만 골라 판단하고, list-artifacts를 다시 호출하지 않습니다.
+
 ## 1. lesson을 직접 작성해 저장 (D-23 — 가장 중요)
 
 당신(이 세션의 Claude)이 방금 이 작업을 직접 수행했습니다. "무엇을 왜 배웠는가"는 당신이 가장 잘 압니다. 별도 LLM/API를 부르지 말고, **당신이 직접** 재사용 가능한 lesson을 작성해 `learn-write`로 저장하세요.
@@ -16,11 +26,7 @@
 
 이번 작업에서 **재사용할 만한 교훈이 없으면 이 단계를 건너뜁니다** (쓰레기 lesson을 만들지 않습니다 — 이게 핵심).
 
-교훈이 있으면, 먼저 기존 lesson을 확인하고 create/update/skip을 **당신이 직접 판단**합니다:
-
-```bash
-node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind lesson
-```
+교훈이 있으면, 0단계 출력의 `kind: lesson` 항목을 보고 create/update/skip을 **당신이 직접 판단**합니다:
 
 - **같은 주제 없음 → create** (mode 생략 시 create):
   ```bash
@@ -49,13 +55,7 @@ node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind lesson
 
 당신이 이번 작업에서 **아키텍처/기술/방향 결정**을 내렸나? (예: "X 대신 Y를 쓰기로", "이 모듈은 Z 패턴으로", "A 접근법을 B 이유로 폐기") **결정이 없으면 이 단계를 건너뜁니다.**
 
-결정이 있으면, 먼저 기존 decision 을 확인하고 create/update/skip 을 **당신이 직접 판단**합니다:
-
-```bash
-node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind decision
-```
-
-출력된 기존 decision 목록(id/title/summary)을 보고 판단:
+결정이 있으면, 0단계 출력의 `kind: decision` 항목(id/title/summary)을 보고 create/update/skip 을 **당신이 직접 판단**합니다:
 - **같은 주제 없음 → create**: 새로 작성.
   ```bash
   echo '{"mode":"create","decision":{"statement":"<무엇을 결정했나, 한 문장>","why":["<왜 이 결정 / 어떤 대안을 왜 안 골랐나>"],"relatedFiles":[],"scope":"","trigger_keywords":[],"applicable_when":{"language":[],"kind":["decision"],"task_type":[],"scope_id":""}}}' | node "$CLAUDE_RUNTIME_HOME/commands/decision-write.mjs"
@@ -72,11 +72,7 @@ node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind decision
 
 이번 작업에서 **버그/장애를 진단·수정**했나? (증상→원인→수정까지 도달한 문제) **그런 문제가 없으면 이 단계를 건너뜁니다.** (자동 troubleshooting은 더 이상 만들지 않습니다 — 세션이 원인/수정/재발방지까지 직접 채웁니다.)
 
-문제가 있으면, 먼저 기존 troubleshooting을 확인하고 create/update/skip을 **당신이 직접 판단**합니다:
-
-```bash
-node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind troubleshooting
-```
+문제가 있으면, 0단계 출력의 `kind: troubleshooting` 항목을 보고 create/update/skip을 **당신이 직접 판단**합니다:
 
 - **같은 문제 없음 → create**:
   ```bash
@@ -100,11 +96,7 @@ architecture 문서의 본질은 "구조를 바꿨다"가 아니라 **"이 시�
 
 **둘 다 아니면(단순 값 수정·문구 변경·구조 무관 버그픽스 등) 건너뜁니다.** 한 task에서 모든 걸 architecture로 만들지는 말 것 — 재사용할 "구조 지도"가 생겼을 때만. (자동 감지는 surfacePatterns가 비면 0개라 신뢰 불가 — 세션이 직접 본문을 씁니다.)
 
-해당되면, 먼저 기존 architecture를 확인하고 create/update/skip을 **당신이 직접 판단**합니다:
-
-```bash
-node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind architecture
-```
+해당되면, 0단계 출력의 `kind: architecture` 항목을 보고 create/update/skip을 **당신이 직접 판단**합니다:
 
 - **같은 주제 없음 → create**: body에 본문 마크다운(## 컴포넌트, ## 데이터 흐름 등 자유 구성)을 직접 작성.
   ```bash
@@ -126,6 +118,7 @@ node "$CLAUDE_RUNTIME_HOME/commands/list-artifacts.mjs" --kind architecture
 node "$CLAUDE_RUNTIME_HOME/commands/session-end.mjs" --close --task-id "<task-start 때 받은 taskId>" --session-id "${CLAUDE_SESSION_ID}"
 ```
 
+- `commands/task-close.mjs`는 같은 동작의 별칭입니다(`--close` 자동 적용) — 어느 쪽을 실행해도 됩니다.
 - **`--task-id`가 핵심입니다.** Claude Code가 hook 쉘에 `CLAUDE_SESSION_ID`를 주입하지 않아 session-id가 비면, `--session-id`만으로는 "no active task"가 납니다. `--task-id`를 넘기면 session-id 어긋남과 무관하게 이 세션의 task를 정확히 닫습니다(멀티세션 안전).
 - `--session-id`는 보조입니다 — 있으면 usage 추적에 쓰이고, 없어도 무방합니다.
 - taskId를 잊었다면(컨텍스트 압축 등) `--task-id` 없이 실행하면 current-task 포인터로 폴백하나, **여러 세션이 동시에 열려 있으면 다른 세션의 task를 닫을 수 있으니** 가능한 한 taskId를 명시하세요.

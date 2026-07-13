@@ -168,8 +168,8 @@
     },
     {
       "relPath": "commands/task-close.md",
-      "sha256": "215a1eaa84cfeabd7d7a343e378c3bcf3a15c04dc73a48b4d5fff2219ed2395b",
-      "size": 11779,
+      "sha256": "4b1599c21a9995aca85f2732caf222373a4673bb85f2404e3e5213a80a7ec955",
+      "size": 12160,
       "required": false
     },
     {
