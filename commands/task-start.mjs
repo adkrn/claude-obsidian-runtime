@@ -39,6 +39,7 @@ import { improvedSimilarity, buildIdf, bm25Lite, trigramJaccard } from '../core/
 import { bumpHitCounts } from '../core/memory/hit-counts.mjs';
 import { generateInitialTodoList, writeTodoFile } from '../core/todo-writer.mjs';
 import { loadObsidianConfig } from '../core/obsidian-config.mjs';
+import { queryCodeIndex } from './code-index-query.mjs';
 
 // ── DESIGN_MANUS_C §6-B-1 — lesson MMR pipeline ─────────────────
 
@@ -191,7 +192,9 @@ function defaultResolveContext({ projectDir, task, limit = 6 }) {
     new Set(matchedGroups.flatMap((group) => group.scopes || []))
   );
 
-  const codeHits = [];
+  // code-index 가 비어 있으면 queryCodeIndex 가 빈 결과를 돌려준다(그레이스풀 스킵).
+  // 이전에는 조회 자체를 안 해서 인덱스를 빌드해도 codeHits 가 항상 0 이었다.
+  const codeHits = queryCodeIndex(projectDir, { query: task, limit: 6 }).results;
   const knowledgeHits = resolveKnowledgeHits(projectDir, {
     promptTokens,
     matchedScopes,
