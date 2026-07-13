@@ -9,7 +9,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const POINTER_REGEX = /^current-task-([0-9a-fA-F-]{8,})\.json$/;
+// UUID 세션 외에 CLAUDE_SESSION_ID 미주입 시 생성되는 fallback-<base36>-<rand> 포인터도
+// 매칭해야 한다 — hex 전용 패턴은 fallback 파일을 영원히 못 잡아 무한 누적됐다(CardGame 실측 15개).
+const POINTER_REGEX = /^current-task-([A-Za-z0-9][A-Za-z0-9-]{6,})\.json$/;
 
 function runtimeDir(projectDir) {
   return path.join(projectDir, '.claude', 'runtime');
@@ -62,12 +64,16 @@ function loadRecentSessionIds(rDir, windowDays) {
   return ids;
 }
 
+// session-end 의 close 상태값은 'completed' — closed/done 만 보면 실제로 닫힌 task 의
+// 포인터가 전부 "열림"으로 오판돼 GC 대상에서 빠진다.
+const CLOSED_STATUSES = new Set(['closed', 'done', 'completed', 'archived']);
+
 function isTaskClosed(rDir, pointer) {
   if (!pointer?.taskId) return true;
   const taskFile = path.join(rDir, 'tasks', `${pointer.taskId}.json`);
   const rec = readJsonSafe(taskFile);
   if (!rec) return true;  // task record 자체가 없으면 orphan
-  return rec.status === 'closed' || rec.status === 'done';
+  return CLOSED_STATUSES.has(String(rec.status || '').toLowerCase());
 }
 
 /**
